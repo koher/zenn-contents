@@ -224,7 +224,7 @@ func asyncHandlerBad3() throws { }
 - でも `did` でも[繰り返し呼ばれるデリゲートメソッド](https://developer.apple.com/documentation/foundation/urlsessiondatadelegate/1411528-urlsession)もあるけど良いのか。
 - `@asyncHandler` が付与された関数は通常の関数のスーパータイプになるので、 `async` 関数を呼ばないといけないわけではない。なので、雑に付与されても良いのではないか。
 
-## completion ハンドラーを持つ Obj-C メソッドを `async` に
+# completion ハンドラーを持つ Obj-C メソッドを `async` に
 
 - [Import Objective-C methods with completion handlers as async #33674](https://github.com/apple/swift/pull/33674)
 
