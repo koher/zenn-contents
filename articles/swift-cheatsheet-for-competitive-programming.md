@@ -3,7 +3,7 @@ title: "競技プログラマのためのSwiftチートシート"
 emoji: "💯"
 type: "tech" # tech: 技術記事 / idea: アイデア
 topics: ["swift", "競技プログラミング"]
-published: false
+published: true
 ---
 
 **Swift 未経験者が Swift で競技プログラミングに挑戦してみるための**、 Swift の基本構文や標準ライブラリの**チートシートです**。競技プログラミングで必要そうなものに絞って掲載しています。より詳しい情報は公式ドキュメント ["The Swift Programming Language"](https://docs.swift.org/swift-book/) を御覧下さい。
