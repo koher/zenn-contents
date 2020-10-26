@@ -1472,7 +1472,7 @@ let line: String = readLine()!
 `map` 等と組み合わせて次のように書けます。
 
 ```swift
-let a: [Int] = readLine()!.map { Int($0)! }
+let a: [Int] = readLine()!.split(separator: " ").map { Int($0)! }
 ```
 
 ## 標準出力
