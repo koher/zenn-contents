@@ -18,6 +18,6 @@
   },
   "homepage": "https://github.com/koher/zenn-contents#readme",
   "dependencies": {
-    "zenn-cli": "^0.1.59"
+    "zenn-cli": "^0.1.66"
   }
 }
