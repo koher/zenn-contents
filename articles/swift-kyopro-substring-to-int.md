@@ -21,12 +21,12 @@ let numbers: [Int] = readLine()!
 // ✅ 速い
 let numbers: [Int] = readLine()!
     .split(separator: " ")
-    .map { Int(String($0))! }
+    .map { Int(String($0))! } // 一度 String に変換してから Int に変換する
 ```
 
 `split` は `[Substring]` を返しますが、前者では `Substring` を直接 `Int` に変換します。しかし、これはパフォーマンス的に劣るため、後者のように一度 `String` に変換してから `Int` に変換する必要があります。
 
-この問題が [ABC 210 D - National Railway](https://atcoder.jp/contests/abc210/tasks/abc210_d) で顕在化し、入力を読み込むだけで TLE になる問題が発生しました。
+この問題が [ABC 210 D - National Railway](https://atcoder.jp/contests/abc210/tasks/abc210_d) で顕在化し、入力を読み込むだけで TLE になる現象が発生しました。
 
 # ABC 210 D - National Railway で起こった問題
 
@@ -38,7 +38,7 @@ let numbers: [Int] = readLine()!
 
 ---
 
-高々 1000 × 1000 の整数を読み込むだけです。 TLE になる理由はないように思えます。しかし、この[入力を読み込むだけで TLE になります](https://atcoder.jp/contests/abc210/submissions/24341958)。
+高々 1000 × 1000 の整数を読み込むだけです。一見、 TLE になる理由は見当たりません。しかし、 `Substring` を直接 `Int` に変換した場合、この[入力を読み込むだけで TLE になります](https://atcoder.jp/contests/abc210/submissions/24341958)[^1]。
 
 ```swift
 let HWC: [Int] = readLine()!
@@ -60,9 +60,9 @@ print(A.count)
 ![](https://storage.googleapis.com/zenn-user-upload/4dad96f0b6464cf2766a9622.png)
 
 
-しかし、このコードの [`.map { Int($0)! }` の部分を `.map { Int(String($0))! }` に変えるだけで TLE は消えます](https://atcoder.jp/contests/abc210/submissions/24342045)。
+なんと、このコードの [`.map { Int($0)! }` の部分を `.map { Int(String($0))! }` に変えるだけで TLE が消えます](https://atcoder.jp/contests/abc210/submissions/24342045)。しかも実行時間はわずか 579 ms 。
 
-こんなのに本番中に気付くのは難しいと思います。 **入力の読み込み時は、必ず `Substring` を一度 `String` に変換してから `Int` に変換する** ようにしましょう。
+本番中にこんなことに気付くのは困難です。 **入力文字列から整数値を読み込むときは、必ず `Substring` を `String` に変換してから `Int` に変換する** ようにしましょう。
 
 # なぜ問題が起こるのか？
 
@@ -84,11 +84,11 @@ let s: Substring = "42"
 print(Int(s)!) // Int.init<S: StringProtocol>(_: S, radix: Int) が呼ばれる
 ```
 
-前者では [`Int.init(_: String)`](https://developer.apple.com/documentation/swift/int/2927504-init) が、後者では [`Int.init<S: StringProtocol>(_: S, radix: Int)`](https://developer.apple.com/documentation/swift/int/2924481-init) が呼ばれます。
+前者では [`Int.init(_: String)`](https://developer.apple.com/documentation/swift/int/2927504-init) が、後者では [`Int.init<S: StringProtocol>(_: S, radix: Int)`](https://developer.apple.com/documentation/swift/int/2924481-init) が呼ばれます。前者は文字列を 10 進数の整数として、後者は `radix` に指定された任意進数の整数としてパースします。
 
-この違いに気付いて初めは、 `Substring` を渡したときは任意進数をパースする処理が入っていて重いのではないかと思いました。 `radix` のデフォルト引数があるからわかりづらいですが、後者では `radix: 10` が省略された引数として渡されていたのです。
+僕がこの違いに気付いたとき、初めは `Substring` を渡したときは任意進数をパースする処理が入っていて重いのではないかと思いました。 `radix` のデフォルト引数があるからわかりづらいですが、後者では `radix: 10` が省略された引数として渡されていたのです。
 
-しかし、[両者の実装](https://github.com/apple/swift/blob/swift-5.2.1-RELEASE/stdlib/public/core/IntegerParsing.swift)を確認したところ、前者は単に後者を呼び出しているだけでした。任意進数を処理するための余分な処理が行われていることがパフォーマンス低下の原因ではないようです。
+しかし、[両者の実装](https://github.com/apple/swift/blob/swift-5.2.1-RELEASE/stdlib/public/core/IntegerParsing.swift)を確認したところ、前者は単に後者を呼び出しているだけでした。
 
 ```swift
 extension FixedWidthInteger {
@@ -99,9 +99,11 @@ extension FixedWidthInteger {
 }
 ```
 
-## `String` と `Substring` のパフォーマンス
+任意進数の整数をパースするために余分な処理が行われているわけではないようです。
 
-では、なぜパフォーマンスの差が生まれるのでしょうか？ `String` と `Substring` にパフォーマンスの差があるのでしょうか？次のようなコードで計測してみます。
+## `String` と `Substring` のパフォーマンスの違い
+
+では、なぜパフォーマンスの違いが生まれるのでしょうか？ `String` と `Substring` に大きなパフォーマンスの違いが存在するあるのでしょうか？次のようなコードで計測してみます。
 
 ```swift
 // string-substring-measure.swift 
@@ -121,16 +123,21 @@ let s2: Substring = .init(s1)
 
 // 最適化で除去されないように sum に値を足し込んで最後に表示する
 var sum: UInt8 = 0
+
+// String の場合
 measure {
     for c in s1 {
         sum &+= c.asciiValue!
     }
 }
+
+// Substring の場合
 measure {
     for c in s2 {
         sum &+= c.asciiValue!
     }
 }
+
 print(sum)
 ```
 
@@ -141,21 +148,25 @@ $ swift -Ounchecked string-substring-measure.swift
 148
 ```
 
-計算量のオーダーは変わらないとはいえ、 65% ほど `Substring` が遅いようです。しかし、先の AtCoder における入力読み込みの実験では 3 〜 4 倍ほどもパフォーマンスが異なりました。
+計算量のオーダーは変わらないとはいえ、 65% ほど `Substring` が遅いようです。しかし、先の AtCoder における入力読み込みの実験では 3 〜 4 倍ほどもパフォーマンスが異なりました。他にも原因があるかもしれません。
 
 ## Specialization
 
-他に差を生む原因として考えられるものに [Specialization](https://github.com/apple/swift/blob/7123d2614b5f222d03b3762cb110d27a9dd98e24/docs/OptimizationTips.rst#id26) が挙げられます。つまり、 `String` の場合は `String` そのものとして扱われるのに対して、 `Substring` の場合には `StringProtocol` の [Existential として扱われている](https://heart-of-swift.github.io/protocol-oriented-programming/#existential-type-%E3%81%A8-existential-container)可能性があります。 Existential を介して値を扱うと、その分だけオーバーヘッドが発生してパフォーマンスが低下します。
+他の原因として考えられるものに [Specialization](https://github.com/apple/swift/blob/7123d2614b5f222d03b3762cb110d27a9dd98e24/docs/OptimizationTips.rst#id26) が挙げられます。
+
+今回のケースでは、 `String` を渡した場合は文字列が `String` そのものとして扱われるのに対して、 `Substring` を渡した場合には `StringProtocol` の [Existential として扱われている](https://heart-of-swift.github.io/protocol-oriented-programming/#existential-type-%E3%81%A8-existential-container)可能性があります。 Existential を介して値を扱うと、その分だけオーバーヘッドが発生してパフォーマンスが低下します。
 
 :::message
-`Int.init(_: String)` を呼び出した場合には、　`Int.init<S: StringProtocol>(_: S, radix: Int)` を呼ぶ箇所で `S == String` が確定しているので、標準ライブラリのビルド時に Specialization が実行されます。しかし、 `Int.init<S: StringProtocol>(_: S, radix: Int)` を直接呼び出すケースでは、標準ライブラリのビルド時に型パラメータ `S` が決定されないので Specialization できません。このように、モジュールをまたいで別々にビルドされるケースでは、一般的に型パラメータは Specialize されません。
+`Int.init(_: String)` を呼び出した場合には、　`Int.init<S: StringProtocol>(_: S, radix: Int)` を呼ぶ箇所で `S == String` が確定しているので、標準ライブラリのビルド時に（ `S == String` として） Specialization が実行されます。
 
-しかし、それだと標準ライブラリの多くのジェネリック API が Specialize できないということになってしまいます。モジュールをまたいでも Specialize する方法はいくつか存在し、通常標準ライブラリの API は大抵モジュールの外から呼び出した場合でも Specialize されるようになっています。
+一方で、 `Int.init<S: StringProtocol>(_: S, radix: Int)` を直接呼び出すケースでは、標準ライブラリのビルド時に型パラメータ `S` を決定できません。 `Int.init<S: StringProtocol>(_: S, radix: Int)` を呼び出すのは僕らが書いたコードで、標準ライブラリの外側に存在するからです。このため、 `Int.init<S: StringProtocol>(_: S, radix: Int)` の第 1 引数に `Substring` を渡す場合、その Specialization は標準ライブラリビルド時には行なえません。
 
-今回は、 `String` と `Substring` を渡した場合のパフォーマンスに差があったことから、正しく Specialize されていないのではないかと疑っています。
+このように、モジュールをまたいだ Specialization （ Cross-module Specialization ）はライブラリ側をビルドするときには実行できないという問題があります。 [Cross-module Specialization を行うには `@inlinable` などを適切に利用する必要があります](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md)。
+
+標準ライブラリのジェネリック API は通常 Cross-module Specialization ができるようになっていますが、今回は、 `String` と `Substring` を渡した場合のパフォーマンスに大きな違いがあったことから、後者で正しく Specialize されていないのではないかと疑いました。
 :::
 
-先程の二つのコードの [SIL](https://github.com/apple/swift/blob/main/docs/SIL.rst) を確認してみましょう。確認しやすいように興味のある箇所だけを `convert` 関数の中に閉じ込めます。
+先程の二つのコードの [SIL (Swift Intermediate Language)](https://github.com/apple/swift/blob/main/docs/SIL.rst) 出力を確認してみましょう。確認しやすいように興味のある箇所だけを `convert` 関数の中に閉じ込めます。
 
 ```swift
 // string-to-int.swift
@@ -179,7 +190,7 @@ func convert(_ s: Substring) -> Int {
 }
 ```
 
-次のようにして SIL を出力し、結果から `convert` の部分だけ抜き出したのが↓です。
+次のように `-emit-sil` オプションで SIL を出力します。 SIL 出力全体を掲載すると長いので、結果から `convert` 関数の部分だけを抜き出しました。
 
 ```
 $ swiftc -Ounchecked -emit-sil string-to-int.swift
@@ -252,19 +263,19 @@ bb0(%0 : $Substring):
 } // end sil function '$s4main7convertySiSsF'
 ```
 
-後者（ `Substring` の場合）では `Int.init` がインライン化されているようで、ずいぶんと長さが異なります。しかし予想に反して、インライン化された先で `Substring` として扱われている（ `StringProtocol` の Existential として扱われていない）様子が見られ（↓）、どうやら Specialization は働いているようです。
+後者（ `Substring` ）の場合、 `Int.init` がインライン化されているようでずいぶんと長さが異なります。しかし予想に反して、渡された文字列は `Substring` として扱われている（ `StringProtocol` の Existential として扱われていない）ようです。たとえば、↓などに `Substring` のまま扱われている様子が見られます。
 
 ```
 %24 = struct_element_addr %8 : $*IndexingIterator<Substring.UTF8View>, #IndexingIterator._elements // user: %25
 ```
 
-`Substring` を直接 `Int` に変換した場合のパフォーマンス低下は、 Specialization の有無に起因した Existential のオーバーヘッドによるものではなさそうです。
+どうやら、 `Substring` を渡した場合でも Specialization は適切に行われているようです。パフォーマンス低下の原因は、 Specialization の有無に起因した Existential のオーバーヘッドによるものではないようです。
 
 ## やっぱり `Substring` が遅い
 
-Specialization の有無による違いではないとすると、やはり `Substring` が遅いのでしょうか。今度は次のような実験をしてみましょう。
+Specialization の有無による違いではないとすると、やはり `Substring` が遅いのでしょうか。
 
-`Substring` から直接 `Int` に変換する場合でも、 `String` を介して変換する場合でも、どちらも明示的に `Int.init<S: StringProtocol>(_: S, radix: Int)` を呼び出します。
+今度は次のような実験をしてみましょう。 `String`, `Substring` どちらの場合でも、 `radix` を与えることで `Int.init<S: StringProtocol>(_: S, radix: Int)` を呼び出します。
 
 ```swift
 // convert-time.swift
@@ -284,11 +295,14 @@ let line = (1 ... 1_000_000).map { $0.description }.joined(separator: " ")
 // 最適化で除去されないように sum に値を足し込んで最後に表示する
 var sum: Int = 0
 
+// String の場合
 measure {
     // Int.init<S: StringProtocol>(_: S, radix: Int) が呼ばれる
     let numbers = line.split(separator: " ").map { Int($0, radix: 10)! }
     sum += numbers.count
 }
+
+// Substring の場合
 measure {
     // Int.init<S: StringProtocol>(_: S, radix: Int) が呼ばれる
     let numbers = line.split(separator: " ").map { Int(String($0), radix: 10)! }
@@ -305,26 +319,32 @@ $ swift -Ounchecked convert-time.swift
 20000000
 ```
 
-見事に差が現れました。同じ条件で試しているので、やはり **`Substring` が遅い** ようです。 65% ほど `Substring` が遅かった実験では、処理が単純すぎて（呼び出される API も異なり）違いが現れづらかったのかもしれません。
+見事に差が現れました。同じ条件で試しているので、やはり **`Substring` が遅い** ようです。 65% ほど `Substring` が遅かった実験では、処理が単純すぎて（呼び出される API も異なり）違いが現れづらかったのだと思います。
 
 :::message
-ただし、この実験だけでは Specialization の差による可能性は残されています。標準ライブラリ内で `Int.init(_: String)` 経由で呼び出されることで、 `Int.init<S: StringProtocol>(_: S, radix: Int)` は `S == String` については Specialize されることが確定しています。そのため、この実験単体では `String` を渡したケースだけ Specialize されたものが呼び出されている可能性を排除できません。
+この実験は先程の Specialization の実験と合わせて意味を持つことに注意して下さい。この実験単体では、 `String` の方が速い理由が Specialization であることを否定できません。
 
-先の実験で `Int.init<S: StringProtocol>(_: S, radix: Int)` が `S == Substring` に対しても Specialize されることを確認しているので、それと合わせて考えると `Substring` が遅いのだろうと考えられます。
+標準ライブラリの API である `Int.init(_: String)` が `Int.init<S: StringProtocol>(_: S, radix: Int)` を呼び出しているため、標準ライブラリビルド時に `Int.init<S: StringProtocol>(_: S, radix: Int)` は `S == String` について Specialize されます。そのため、この実験単体では `String` の場合だけ Specialize された可能性を排除できません。
+
+先の実験で `Int.init<S: StringProtocol>(_: S, radix: Int)` が Cross-module で Specialize されることを確認しているので、それと合わせて `Substring` が遅いのだろうと結論付けられます。
 :::
 
 # なぜこれまで問題が顕在化しなかったか
 
-1000 × 1000 の整数の読み込みなどこれまでも何度もあったはずです。なぜ今回問題が顕在化したのでしょうか。
+1000 × 1000 の整数の読み込みは、これまでも何度もあったはずです。なぜこれまで問題が顕在化しなかったのでしょうか。
 
-これは $1 \leq C \leq 10^9$ という制約によるものかもしれません。つまり、桁数が大きすぎて処理のオーバーヘッドが大きかったのではないかというのが僕の推測です。 1000 × 1000 のデータを読み込むことは何度もあったと思いますが、これほど桁数の大きい整数を 1000 × 1000 も読み込んだ記憶は（僕が解いた問題の中では）ありません。今回、桁数が大きい整数を 1000 × 1000 も `Substring` から `Int` に直接変換しようとしたことで問題が顕在化したのではないでしょうか。
+僕の推測ですが、これは $1 \leq C \leq 10^9$ という制約によるものだと思います。つまり、桁数が大きすぎて処理のオーバーヘッドが大きかったのではないかということです。パフォーマンスの悪い `Substring` の API にアクセスする回数は、読み込む整数文字列の桁数に比例します。
+
+1000 × 1000 のデータを読み込むことは何度もあったと思いますが、これほど桁数の大きい整数を 1000 × 1000 も読み込んだ記憶は（僕が解いた問題の中では）ありません。今回、桁数が大きい整数を 1000 × 1000 も `Substring` から `Int` に直接変換しようとしたことで問題が顕在化したのではないかと考えられます。
 
 # 結論
 
-`Substring` は遅いです。 1000 × 1000 の整数を `Substring` から `Int` に変換しようとしただけで TLE になることがあります。必ず次のように `String` を介して変換するようにしましょう。
+`Substring` は遅いです。 1000 × 1000 の整数を `Substring` から `Int` に変換しようとすると、それだけで TLE になることがあります。必ず次のように `String` を介して変換するようにしましょう。
 
 ```swift
 let numbers: [Int] = readLine()!
     .split(separator: " ")
     .map { Int(String($0))! }
 ```
+
+[^1]: たまに TLE にならず、ぎりぎりで通ります。
