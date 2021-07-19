@@ -271,7 +271,7 @@ bb0(%0 : $Substring):
 
 どうやら、 `Substring` を渡した場合でも Specialization は適切に行われているようです。パフォーマンス低下の原因は、 Specialization の有無に起因した Existential のオーバーヘッドによるものではないようです。
 
-## やっぱり `Substring` が遅い
+## ~~やっぱり `Substring` が遅い~~
 
 Specialization の有無による違いではないとすると、やはり `Substring` が遅いのでしょうか。
 
@@ -319,7 +319,7 @@ $ swift -Ounchecked convert-time.swift
 20000000
 ```
 
-見事に差が現れました。同じ条件で試しているので、やはり **`Substring` が遅い** ようです。 65% ほど `Substring` が遅かった実験では、処理が単純すぎて（呼び出される API も異なり）違いが現れづらかったのだと思います。
+~~見事に差が現れました。同じ条件で試しているので、やはり **`Substring` が遅い** ようです。 65% ほど `Substring` が遅かった実験では、処理が単純すぎて（呼び出される API も異なり）違いが現れづらかったのだと思います。~~ 追記を御覧下さい。
 
 :::message
 この実験は先程の Specialization の実験と合わせて意味を持つことに注意して下さい。この実験単体では、 `String` の方が速い理由が Specialization であることを否定できません。
@@ -337,9 +337,161 @@ $ swift -Ounchecked convert-time.swift
 
 1000 × 1000 のデータを読み込むことは何度もあったと思いますが、これほど桁数の大きい整数を 1000 × 1000 も読み込んだ記憶は（僕が解いた問題の中では）ありません。今回、桁数が大きい整数を 1000 × 1000 も `Substring` から `Int` に直接変換しようとしたことで問題が顕在化したのではないかと考えられます。
 
+# 追記 (2021-07-19 23:21)
+
+## `Substring` は遅くない & Swift 5.5 で修正される
+
+[Discord の swift-developers-japan で kateinoigakukun, ribilynn 両名に、本件の原因は `Substring` が遅いことではないことを教えてもらいました。](https://discord.com/channels/291054398077927425/291054454793306112/866504227354443776)
+
+[`Int.init<S: StringProtocol>(_: S, radix: Int)` の実装](https://github.com/apple/swift/blob/swift-5.2.1-RELEASE/stdlib/public/core/IntegerParsing.swift#L149-L174)は次の通りです。
+
+```swift
+public init?<S: StringProtocol>(_ text: S, radix: Int = 10) {
+  _precondition(2...36 ~= radix, "Radix not in range 2...36")
+  if let str = text as? String, str._guts.isFastUTF8 {
+    guard let ret = str._guts.withFastUTF8 ({ utf8 -> Self? in
+      var iter = utf8.makeIterator()
+      return _parseASCII(codeUnits: &iter, radix: Self(radix))
+    }) else {
+      return nil
+    }
+    self = ret
+    return
+  }
+  // TODO(String performance): We can provide fast paths for common radices,
+  // native UTF-8 storage, etc.
+  var iter = text.utf8.makeIterator()
+  guard let ret = Self._parseASCIISlowPath(
+    codeUnits: &iter, radix: Self(radix)
+  ) else { return nil }
+  self = ret
+}
+```
+
+3 行目の `if let str = text as? String, str._guts.isFastUTF8 {` で `str` が `String` の場合だけ分岐して高速処理ルートに入っています。 `String` と `Substring` のバッファは同じ構造なので、 `Substring` でも適切な実装がされれば高速に処理可能なはずです。実際に、[このコードは 4 ヶ月前に修正されていて](https://github.com/apple/swift/blob/ad992f48ddf3db9665de1ff33e72c6de05b2e9c1/stdlib/public/core/IntegerParsing.swift#L194-L203)、 Swift 5.5 では `Substring` でも高速にパース可能になります。
+
+本当に高速になるのか、 Swift 5.5 の nightly build で実験してみました。 Docker で nightly build を取ってきて、先の convert-time.swift を実行しました。
+
+```
+$ docker pull swiftlang/swift:nightly-5.5
+...
+$ docker run -it --rm swiftlang/swift:nightly-5.5 /bin/bash
+root@e739d6ec244d:/# apt update
+...
+root@e739d6ec244d:/# apt install vim
+...
+root@e739d6ec244d:/# vim convert-time.swift
+root@e739d6ec244d:/# swift -Ounchecked convert-time.swift
+0.21955879926681518 sec
+0.24530550241470336 sec
+20000000
+```
+
+`String` への余分な変換がなくなった分、むしろ `Substring` の方が速くなっています。 **将来、 AtCoder に Swift 5.5 以降が採用されれば `Substring` を直接 `Int` に変換しても問題なくなるでしょう。**
+
+## ABC 210 D 以外の例
+
+最近の例でも同じようにハマる例を KameKun さんが教えてくれました。 ABC 189 は（ [Swift Zoomin' #5](https://swift-tweets.connpass.com/event/193382/) と重なっていて）僕はたまたま不参加だったみたいです。
+
+@[tweet](https://twitter.com/__KameKun__/status/1416957734231056384)
+
+## より高速な変換
+
+semisagi さんが↓のように教えてくれました。
+
+https://twitter.com/semisagi/status/1416968181634064389
+
+たとえば、こんな感じでしょうか。
+
+```swift
+func intN<S: StringProtocol>(from text: S) -> [Int] {
+    var values: [Int] = []
+    var value = 0
+    for c in text {
+        let ascii = c.asciiValue!
+        if ascii == 0x20 { // space
+            values.append(value)
+            value = 0
+            continue
+        }
+        
+        let digit = ascii - 0x30
+        value *= 10
+        value += Int(digit)
+    }
+    values.append(value)
+    return values
+}
+```
+
+convert-time.swift を修正して計測してみましょう。
+
+```swift
+import Foundation
+
+func intN<S: StringProtocol>(from text: S) -> [Int] {
+    var values: [Int] = []
+    var value = 0
+    for c in text {
+        let ascii = c.asciiValue!
+        if ascii == 0x20 { // space
+            values.append(value)
+            value = 0
+            continue
+        }
+
+        let digit = ascii - 0x30
+        value *= 10
+        value += Int(digit)
+    }
+    values.append(value)
+    return values
+}
+
+func measure(_ body: @escaping () -> Void) {
+    let start = Date.timeIntervalSinceReferenceDate
+    for _ in 0 ..< 10 {
+        body()
+    }
+    let end = Date.timeIntervalSinceReferenceDate
+    print((end - start) / 10, "sec")
+}
+
+let line = (1 ... 1_000_000).map { $0.description }.joined(separator: " ")
+
+// 最適化で除去されないように sum に値を足し込んで最後に表示する
+var sum: Int = 0
+
+measure {
+    let numbers = intN(from: line)
+    sum += numbers.count
+}
+measure {
+    let numbers = line.split(separator: " ").map { Int(String($0))! }
+    sum += numbers.count
+}
+
+print(sum)
+```
+
+```
+$ swift -Ounchecked convert-time-2.swift 
+0.29693779945373533 sec
+0.37144229412078855 sec
+20000000
+```
+
+見事に `line.split(separator: " ").map { Int(String($0))! }` よりも速くなりました。
+
+---
+
+Zenn に記事を投稿するだけで色んな知見が集まってきて素晴らしいですね！
+
+https://twitter.com/takakengo/status/1416952007282225159
+
 # 結論
 
-`Substring` は遅いです。 1000 × 1000 の整数を `Substring` から `Int` に変換しようとすると、それだけで TLE になることがあります。必ず次のように `String` を介して変換するようにしましょう。
+AtCoder で Swift を使って 1000 × 1000 の整数を `Substring` から `Int` に変換しようとすると、それだけで TLE になることがあります。必ず次のように `String` を介して変換するようにしましょう。
 
 ```swift
 let numbers: [Int] = readLine()!
@@ -347,4 +499,7 @@ let numbers: [Int] = readLine()!
     .map { Int(String($0))! }
 ```
 
+この問題は Swift 5.5 で解決されるので、将来的には `String` への変換は不要になると思われます[^2]。
+
 [^1]: たまに TLE にならず、ぎりぎりで通ります。
+[^2]: 2021 年 7 月 19 日現在、 AtCoder で採用されている Swift のバージョンは 5.2.1 です。現在リリースされている最新の Swift のバージョンは 5.4.2 で、 Swift 5.5 は 2021 年秋頃にリリースされると思われます。
