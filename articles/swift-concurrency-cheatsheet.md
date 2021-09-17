@@ -325,3 +325,61 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 
 つまり `async` / `await` を使うと、コードが簡潔になるだけでなく、安全にもなるということです（さらに言えば、パフォーマンスも向上します）。
 
+## 💼 Case 6: コールバックから `async` への変換
+
+:::message
+Case 6 には Before と After がありません。
+:::
+
+これまでの Case で `async` / `await` が優れているのはわかりましたが、現実問題としてすべてがすぐに `async` / `await` になるわけではありません。たとえば、利用しているサードパーティライブラリの非同期 API がコールバックのままになっているかもしれません。
+
+そのような場合でも、コールバック版をラップして `async` 版を自力実装することができれば、アプリケーションコードは `async` / `await` で記述することができます。そんなときに活躍するのが Continuation です。
+
+次の、コールバック版の `downloadData` 関数を使って、 `async` 版の `downloadData` 関数を実装します。
+
+```swift
+// コールバック
+func downloadData(from url: URL,
+    completion: @escaping (Result<Data, Error>) -> Void)
+```
+
+`async` 版の `downloadData` 関数は Continuation を使って次のように実装できます。
+
+```swift
+// async
+func downloadData(from url: URL) async throws -> Data {
+    try await withCheckedThrowingContinuation { continuation in
+        downloadData(from: url) { result in
+            do {
+                let data = try result.get()
+                continuation.resume(returning: data)
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+```
+
+`async` 版の `downloadData` 関数の中でコールバック版の `downloadData` 関数を呼び出しても、その結果はコールバック関数の引数としてしか受け取れません。なんとかそれを `async` 版の戻り値として `return` しなければ（もしくは、エラーの場合は `throw` しなければ）なりません。
+
+この変換を行ってくれるのが、新しく標準ライブラリに追加された `withCheckedThrowingContinuation` 関数です。 `withCheckedThrowingContinuation` 関数に渡されたクロージャは、引数として `continuation` を受け取ります。 `continuation` の `resume(returning:)` メソッドに結果を渡せばそれを `withCheckedThrowingContinuation` の戻り値として `return` してくれますし、 `resume(throwing:)` メソッドにエラーを渡せばエラーとして `throw` してくれます。
+
+なお、今回のようにコールバック関数が `Result` を受け取っている場合には、 `conitnuation` の `resume(with:)` メソッドが役立ちます。結果とエラーをそれぞれ `resume(returning:)` と `resume(throwing:)` に渡す代わりに、 `resume(with:)` メソッドは直接 `Result` を受け取ります。
+
+```swift
+// async （ resume(with:) を使う場合）
+func downloadData(from url: URL) async throws -> Data {
+    try await withCheckedThrowingContinuation { continuation in
+        downloadData(from: url) { result in
+            continuation.resume(with: result)
+        }
+    }
+}
+```
+
+:::message
+もし `throws` が必要ない場合には、代わりに `withCheckedContinuation` 関数を利用します。
+
+また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。　`withChecked(Throwing)Continuation` では、複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーを引き起こしますが、 `withUnsafe(Throwing)Continuation` ではそのようなケースで未定義動作となります（チェックしない分、わずかにパフォーマンスが向上します）。
+:::
