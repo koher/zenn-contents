@@ -1055,14 +1055,16 @@ func increment() async -> Int
 ```swift
 let counter: Counter = .init()
 
-Task {
+Task.detached {
     print(await counter.increment()) // 1 or 2
 }
 
-Task {
+Task.detached {
     print(await counter.increment()) // 2 or 1
 }
 ```
+
+この `increment` メソッドのように `actor` のキューによってデータ競合から守られていることを **actor-isolated** であると言います。
 
 **参考文献**
 
@@ -1232,7 +1234,7 @@ Effectful Read-only Properties は名前の通り read-only です。今のと�
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## Case 17: 共有された状態の変更（複数インスタンスの連携）
+## 💼 Case 17: 共有された状態の変更（複数インスタンスの連携）
 
 :::message
 この Case には Before がありません。
@@ -1275,3 +1277,149 @@ actor Counter {
 
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+## 💼 Case 18: 共有された状態の変更（非同期処理結果の反映）
+
+カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないように適切に守る必要があります。
+
+Case 7 では `viewDidAppear` から直接 `fetchUser` を呼び出しましたが、 `fetchUser` を呼び出して状態を変更する処理を ViewModel に移動し、 `viewDidAppear` からは単に処理のトリガーするだけにします。
+
+### Before
+
+ViewModel のクラス名を `UserViewState` とすると、 `actor` を使って次のように書けます。
+
+```swift
+final class UserViewState: ObservableObject {
+    private let queue: DispatchQueue = .init(label: ...)
+    ...
+    @Published private var _user: User?
+    func user(_ handler: @escaping (User?) -> Void) {
+        queue.async { [self] in
+            handler(_user)
+        }
+    }
+    
+    func loadUser() {
+        fetchUser(for: userID) { [self] user in
+            queue.async {
+                do {
+                    _user = try user.get()
+                } catch {
+                    // エラーハンドリング
+                }
+            }
+        }
+    }
+}
+```
+
+`loadUser` メソッドが呼ばれると `fetchUser` 関数を呼び出して非同期的に状態を更新します。また、 Case 16 と同様に `user` には `queue` を介してアクセスする必要があるため、 `user` はコールバック関数で値を返す形になっています。
+
+これを利用する `UserViewController` のコードは次のようになります。
+
+`viewDidApperar` から `loadUser` メソッドを呼び出して、サーバーからデータを取得させます。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        state.loadUser()
+    }
+}
+```
+
+また、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        ...
+        state
+            .objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [self] _ in
+                // state を View に反映する処理
+                state.user { user in
+                    DispatchQueue.main.async {
+                        nameLabel.text = user?.name
+                    }
+                }
+            }
+            .store(in: &cancellables)
+    }
+    ...
+}
+```
+
+### After
+
+`actor` を使うと `UserViewState` は次のように書けます。 `queue` がないのと、 `user` を非同期化して二重化するコードが必要ないため、 Before と比べると簡潔に書けます。
+
+```swift
+actor UserViewState: ObservableObject {
+    let userID: User.ID
+    @Published var user: User?
+    ...
+    func loadUser() async {
+        do {
+            user = try await fetchUser(for: userID)
+        } catch {
+            // エラーハンドリング
+        }
+    }
+}
+```
+
+利用側のコードには `await` が必要なことに注意が必要です。 Case 7 と同じように `Task` を使います。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        Task {
+            await state.loadUser()
+        }
+    }
+}
+```
+
+また、変更を View に反映するコードは次のようになります。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        ...
+        state
+            .objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [self] _ in
+                // state を View に反映する処理
+                Task {
+                    let user = await state.user
+                    nameLabel.text = user?.name
+                }
+            }
+            .store(in: &cancellables)
+    }
+    ...
+}
+```
+
+このようにして `actor` を使って ViewModel をデータ競合から守ることができました。しかし、これに関してはより良い方法を Case 20 で紹介します。
+
+**参考文献**
+
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
