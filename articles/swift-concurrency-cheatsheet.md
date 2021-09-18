@@ -1164,3 +1164,70 @@ actor Counter {
 
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+## 💼 Case 16: 共有された状態の変更（ getter ）
+
+Case 14, 15 では `count` を外部からは隠蔽していましたが、インクリメントすることなくカウントを取得したいことも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
+
+### Before
+
+`count` は `queue` を使って非同期的に結果を返さないといけないので、 `count` をコールバック関数で結果を返すメソッドにします。
+
+```swift
+final class Counter {
+    private let queue: DispatchQueue = .init(label: UUID().uuidString)
+    
+    private var _count: Int = 0
+    func count(_ handler: @escaping (Int) -> Void) {
+        queue.async { [self] in
+            handler(_count)
+        }
+    }
+    
+    func increment(completion: @escaping (Int) -> Void) {
+        queue.async { [self] in
+            _count += 1
+            completion(_count)
+        }
+    }
+}
+```
+
+ここでも、 Case 15 で見られたのと同じように、非同期的な `count` と同期的な `_count` の二重化が見られます。
+
+### After
+
+`actor` を用いる場合、単に `count` を `private(set)` にして公開します。
+
+```swift
+actor Counter {
+    private(set) var count: Int = 0
+    
+    func increment() -> Int {
+        count += 1
+        return count
+    }
+}
+```
+
+`actor` のメソッドに外部からアクセスする場合は `async` に見えましたが、プロパティである `count` はどのように見えるのでしょうか。
+
+Swift 5.5 で [Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md) が追加され、プロパティも `throws` や `async` になることができるようになりました。これを用いて、 `count` は外部からアクセスされた場合、 `async` なプロパティのように振る舞います。つまり、外部から `count` にアクセスするには `await` が必要になります。
+
+```swift
+print(await counter.count)
+```
+
+:::message
+Effectful Read-only Properties は名前の通り read-only です。今のところ `set` を `async` にすることはできません。
+
+上記の例では `count` を `private(set)` にしましたが、これがなくても外部から `count` を変更することはできません。 `actor` に外部からアクセスするには `async` である必要がありますが、非同期的に `count` を `set` する方法がないためです。
+
+しかし、将来的に `set async` が可能になる可能性はあるので、仕様上 `set` を許容しないのであれば `private(set)` にしておく方が良いと思います。
+:::
+
+**参考文献**
+
+- [SE-0310: Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md)
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
