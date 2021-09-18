@@ -543,6 +543,8 @@ func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) 
 
 並行処理を実現するためには **`async let` Binding** を利用します。 `async` 関数を呼び出すときは `await` する必要がありますが、 `async let` Binding を利用すると `await` なしに `async` 関数を呼び出すことができます。
 
+`async let` Binding を利用すると、次のように Before と比べてはるかに簡潔に並行処理のコードを書くことができます。
+
 ```swift
 func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) {
     let smallURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
@@ -562,6 +564,8 @@ func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) 
 そして、 `async let` で宣言された定数を `(3)` で使おうとしたときに、初めて `await` が（ `try` も）必要になります。このようにして `await` を利用時まで遅らせることで、並行に関数を実行させることができます。
 
 `async let` にはもう一つ特筆すべき特徴があります。それは、 `async let` で宣言された定数は、そのスコープを抜ける前に必ず `await` されなければならないということです。 `async let` のまま `return` するなど、スコープの外に持ち出すことはできません。これによって、 `async let` で開始された非同期処理は、必ずその呼び出し元の `async` 関数よりも先に完了することが保証されています。このように非同期関数のライフタイムがスコープで構造化されていることが、 **Structured Concurrency** という名前の由来です。
+
+なお、 `async let` で宣言された定数をスコープ内で `await` しなかった場合、スコープの抜ける前に自動的に `await` されます。
 
 **参考文献**
 
@@ -587,4 +591,82 @@ for value in values {
 これと同じように、 Structured Concurrency は並行処理のコードに、スコープによる構造化をもたらします。
 
 なお、 Structured Programming は Swift の発明ではありません。比較的新しい概念ですが、 Kotlin などに先行して取り入れられています。
+:::
+
+## 💼 Case 10: 並行処理（可変個数の場合）
+
+次は可変個数の並行処理を考えます。 `async let` Binding を使えば固定個数の並行処理は簡単に記述できましたが、可変個数の場合は `async let` Binding が使えません。
+
+ここでは例として、 N 人のユーザーのアイコンをダウンロードする関数を考えます。ユーザー ID の `Array` を渡して、それらのユーザーのアイコンを並行してダウンロードします。
+
+### Before
+
+Before については Case 9 と大差ありません。次のコードでは、 Case 9 同様 `DispatchGroup` を使って、並行に実行された非同期処理の待ち合わせをしています。
+
+```swift
+func fetchUserIcons(for ids: [User.ID], completion: @escaping (Result<[User.ID: Data], Error>) -> Void) {
+    var results: [User.ID: Result<Data, Error>] = [:]
+    let group: DispatchGroup = .init()
+    for id in ids {
+        let url: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
+        
+        group.enter()
+        downloadData(from: url) { icon in
+            results[id] = icon
+            group.leave()
+        }
+    }
+    
+    group.notify(queue: .global()) {
+        do {
+            let icons = try results.mapValues { try $0.get() }
+            completion(.success(icons))
+        } catch {
+            completion(.failure(error))
+        }
+    }
+}
+```
+
+### After
+
+この例では `ids` が `Array` で渡されます。そのため、これを `async let` に書き下すことができません。
+
+`ids` を `for` 文で一つずつ取り出して `async let` を書くわけにもいきません。なぜなら、 `async let` は宣言されたスコープ内で `await` する必要があるため、すべての ID について並行に処理を実行して、後でまとめて `await` することができないからです。
+
+これを実現するには `TaskGroup` （や `ThrowingTaskGroup` ）を使います。次のコードでは、 `withThrowingTaskGroup` 関数に渡したクロージャの引数として `group` （ `ThrowingTaskGroup` インスタンス）を受け取っています。
+
+```swift
+func fetchUserIcons(for ids: [User.ID]) async throws -> [User.ID: Data] {
+    try await withThrowingTaskGroup(of: (User.ID, Data).self) { group in // (1)
+        for id in ids {
+            group.addTask { // (2)
+                let url: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
+                return try await (id, downloadData(from: url)) // (3)
+            }
+        }
+        
+        var icons: [User.ID: Data] = [:]
+        for try await (id, icon) in group { // (4)
+            icons[id] = icon
+        }
+        return icons // (5)
+    }
+}
+```
+
+まず、 `(1)` でクロージャ式の引数として `group` を受け取ります。
+
+`(2)` で `addTask` メソッドを使って、 `group` に Task を追加します。 `addTask` で追加された Task は元の Task から派生した Child Task として扱われ、並行に実行されます。 `addTask` のクロージャの中の `(3)` で `await` をしていますが、 `addTask` 自体は `await` しておらず、このクロージャは並行して実行されるため、 `ids` のループは個々の `id` に対するダウンロードの結果を待たずにイテレートすることができます。
+
+そのように並行で Child Task を実行した後で、 `group` から Child Task の結果を取り出すときに `await` する必要があります（ `(4)` ）。これは、 `async let` で宣言された定数を利用するときに `await` が必要なのとよく似ています。このような 2 段階の処理を行うことで、並行に処理を実行し、後で待ち合わせて結果を取得することが可能となっています。
+
+`(4)` についてもう一つ注目すべきは、 `for` 文で `group` から結果を取り出すときに `for try await` と書かれていることです。 Swift Concurrency で追加された `AsyncSequence` に対して `for` 文を使うときには、 `for await` または `for try await` で値を受け取る必要があります。 `for await` （ `for try await` ）を使うことで、非同期的に得られる値を待ちながら順番に取り出すことができます。
+
+最後に、 `(5)` で `return` した結果が `(1)` の `withThrowingTaskGroup` の結果として返されます。
+
+この一連の処理を振り返ると、 `addTask` で作られる Child Task のライフタイムが `group` に縛られており（ `withThrowingTaskGroup` のスコープを越えて生存できない）、並行処理が構造化されていることがわかります。
+
+:::message
+Case 9 のように固定個数の処理を並行で実行したい場合にも、 `async let` Binding ではなく `TaskGroup` を使うことができます。 `TaskGroup` が使えればどのようなケースにも対応できますが、コードがやや複雑になります。 `async let` Binding は固定個数の場合に、簡潔に並行処理を記述するためのものと考えると良いでしょう。
 :::
