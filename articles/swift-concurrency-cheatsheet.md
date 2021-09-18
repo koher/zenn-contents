@@ -1423,3 +1423,200 @@ final class UserViewController: UIViewController {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
+
+## 💼 Case 19: Actor Boundary を越える
+
+:::message
+この Case には Before がありません。
+:::
+
+### After
+
+Case 18 では何気なく `actor` から `User` を取り出しましたが、これはそれほど簡単な話ではありません。
+
+取り出した `User` が次のような `struct` であれば問題ありません。
+
+```swift
+struct User {
+    let id: ID
+    var name: String
+    var age: Int
+    ...
+}
+```
+
+しかし、次のようなクラスだとどうでしょうか。
+
+```swift
+final class User {
+    let id: ID
+    var name: String
+    var age: Int
+    ...
+}
+```
+
+このとき、 `actor` から取り出した `User` インスタンスは、 `actor` の内外で共有されることになります。すると、次のように `actor` から取り出した `user` に変更を加えた場合、その変更は `actor` の内部にも影響を及ぼします。この変更は `actor` に守られていない（ actor-isolated でない）ので、データ競合を引き起こす可能性があります。そのため、コンパイラはこのようなコードをコンパイルエラーとします。
+
+```swift
+let user = await state.user // ⛔ コンパイルエラー
+user?.age += 1 // actor の外から変更
+```
+
+しかし、クラスは絶対にダメというわけではありません。もし `User` がイミュータブルクラスであれば、 `actor` の内外で共有されてもデータ競合を引き起こすことはありません。
+
+```swift
+final class User {
+    let id: ID
+    let name: String
+    let age: Int
+    ...
+}
+```
+
+```swift
+let user = await state.user // ✅ OK
+user?.age += 1 // ⛔ 変更できない
+```
+
+上記は `actor` から値を取得する例でしたが、 `actor` が外部から値を受け取る場合にも同じことが言えます。
+
+では、コンパイラはどのようにして `actor` 内外のやりとりを許可するか判断するのでしょうか。
+
+そのために導入されたのが [`Sendable`](https://developer.apple.com/documentation/swift/sendable) プロトコルです。 `Sendable` に適合する型は `actor` の内外でやりとりすることができます。 `Int` や `String` などの型はすべて `Sendable` に適合しており、そのためカウンターから問題なく `count` を取り出すことができました。
+
+`actor` から `User` を取り出せるようにするためには、 `User` を `Sendable` に適合させる必要があります。
+
+```swift
+struct User: Sendable {
+    let id: ID
+    var name: String
+    var age: Int
+    ...
+}
+```
+
+しかし、どんな型でも `Sendable` に適合できるわけではありません。たとえば、 `var` プロパティを持つクラスは `Sendable` に適合することができません。
+
+```swift
+// ⛔ var プロパティを持つのでコンパイルエラー
+final class User: Sendable {
+    let id: ID
+    var name: String
+    var age: Int
+    ...
+}
+```
+
+`let` プロパティしか持たないイミュータブルクラスは `Sendable` に適合することができます。
+
+```swift
+// ✅ let プロパティしか持たないので OK
+final class User: Sendable {
+    let id: ID
+    let name: String
+    let age: Int
+    ...
+}
+```
+
+ただし、 `struct` の場合でもイミュータブルクラスの場合でも、 `Sendable` に適合するにはすべてのプロパティの型が `Sendable` に適合している必要があります。これは、 `Codable` に適合するためにすべてのプロパティが `Codable` でなければならないのと似ています。
+
+たとえば、 `Sendable` でない `NSString` をプロパティに持つと `Sendable` に適合することはできません。
+
+```swift
+// ⛔ `Sendable` でない型のプロパティを持つのでコンパイルエラー
+final class User: Sendable {
+    let id: ID
+    let name: NSString
+    let age: Int
+    ...
+}
+```
+
+次のように、 read-only な Computed Property を持っていてもイミュータビリティは崩れません。このような型も `Sendable` に適合させることができます。
+
+```swift
+// ✅ Computed Property を持っていてもイミュータブルなので OK
+final class User: Sendable {
+    let id: ID
+    let firstName: String
+    let familyName: String
+    let age: Int
+    
+    var name: String {
+        "\(firstName) \(familyName)"
+    }
+    ...
+}
+```
+
+上記の `User` を改良して、次のような型を作るとどうなるでしょうか。毎回 `name` を作る計算コストを軽減するために、初回アクセス時に `name` をキャッシュするようにします。
+
+```swift
+final class User: Sendable {
+    let id: ID
+    let firstName: String
+    let familyName: String
+    let age: Int
+    
+    private var _name: String? // ⛔
+    var name: String {
+        if _name == nil {
+            _name = "\(firstName) \(familyName)"
+        }
+        return _name!
+    }
+    ...
+}
+```
+
+このとき、 `User` のイミュータビリティは崩れていませんが、 `var` プロパティを持つために `User` は `Sendable` に適合できなくなってしまいます。
+
+このように、 `Sendable` として取り扱っても安全とわかっている型を、強制的に `Sendable` に適合させることもできます。それには `@unchecked` を使います。
+
+```swift
+final class User: @unchecked Sendable {
+    let id: ID
+    let firstName: String
+    let familyName: String
+    let age: Int
+    
+    private var _name: String? // ✅
+    var name: String {
+        if _name == nil {
+            _name = "\(firstName) \(familyName)"
+        }
+        return _name!
+    }
+    ...
+}
+```
+
+この `@unchecked` は、たとえばロックを使ってデータ競合から守られている型を `Sendable` に適合させる場合などにも役立ちます。
+
+その他に `Sendable` に適合しているものとして `actor` が挙げられます。 `actor` はキューに守られているので、 `actor` の内外で別の `actor` のインスタンスをやりとりしてもデータ競合を引き起こしません。そのため、 `actor` は自動的に `Sendable` に適合します。
+
+プロトコルに適合させられないものもあります。たとえば、 `actor` が高階メソッドを実装したいとします。しかし、関数やクロージャをプロトコルに適合させることができないので、そのままでは高階メソッドの引数として渡すことができません。
+
+```swift
+actor Foo {
+    func bar(_ f: (String) -> Int) { // ⛔
+        // ...
+    }
+}
+```
+
+関数やクロージャが `Sendable` に適合していることを表すために、 `@Sendable` が利用できます。
+
+```swift
+actor Foo {
+    func bar(_ f: @Sendable (String) -> Int) { // ✅
+        // ...
+    }
+}
+```
+
+- [SE-0302: `Sendable` and `@Sendable` closures](https://github.com/apple/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md)
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
