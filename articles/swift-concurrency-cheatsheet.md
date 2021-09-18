@@ -16,6 +16,10 @@ Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が�
 - Structured Concurrency
 - Actor
 
+:::message
+本記事の説明は前から読んで理解できるように書かれていますが、チートシートとして、やりたいことベースでコードの書き方を調べたい場合は目次をご活用下さい。
+:::
+
 # `async` / `await`
 
 `async` / `await` は Swift Concurrency の一部ですが、 `async` / `await` 自体が並行処理を扱うわけではありません。 `async` / `await` は非同期処理に関する機能です。
@@ -382,4 +386,88 @@ func downloadData(from url: URL) async throws -> Data {
 もし `throws` が必要ない場合には、代わりに `withCheckedContinuation` 関数を利用します。
 
 また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。　`withChecked(Throwing)Continuation` では、複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーを引き起こしますが、 `withUnsafe(Throwing)Continuation` ではそのようなケースで未定義動作となります（チェックしない分、わずかにパフォーマンスが向上します）。
+:::
+
+# Structured Concurrency
+
+ここからは Structured Concurrency に分類される例を紹介します。
+
+## 💼 Case 7: 非同期処理の開始
+
+Concurrency と言いながら、 Case 7 ではまだ非同期処理を扱います。ここでは、同期関数から非同期関数を呼び出すケースを扱います。
+
+例として、ユーザー情報を表示する View Controller 、 `UserViewController` を考えます。 `viewDidAppear` で Case 4 の `fetchUser` 関数を呼び出し、ユーザー情報を取得、画面上に表示します。
+
+### Before
+
+従来のコールバックによる非同期関数を呼び出す場合、特に難しいところはありません。単に `viewDidAppear` から `fetchUser` を呼び出すだけです。
+
+```swift
+extension UserViewController {
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
+        fetchUser(for: userID) { [self] user in
+            do {
+                let user = try user.get()
+                nameLabel.text = user.name
+            } catch {
+                // エラーハンドリング
+            }
+        }
+    }
+}
+```
+
+### After
+
+`fetchUser` が `async` 関数の場合、次のような問題があります。
+
+`async` / `await` には、 `async` 関数は `async` 関数の中でしか呼び出せないという制約があります。もし、（ `async` でない）普通の関数の中で `async` 関数を呼び出すとコンパイルエラーになります。これは `throws` が付与された関数は `throws` が付与された関数の中でしか呼び出せないのと同じです。
+
+`throws` の場合は `do` - `try` - `catch` でハンドリングすることで、 `throws` が付与されて**いない**関数の中で呼び出すことができました。しかし `async` には `catch` に相当するものがありません。
+
+では、 `veiwDidAppear` から `fetchUser` を呼び出すにはどうすれば良いでしょうか。 `veiwDidAppear` は `async` メソッドでないため、 `veiwDidAppear` の中で `async` な `fetchUser` 関数を呼び出すことはできません。
+
+そんなときに役立つのが `Task` です。 `Task` を使うと、次のようにして、 `veiwDidAppear` の中から `async` な `fetchUser` 関数を呼び出すことができます。
+
+```swift
+extension UserViewController {
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
+        Task {
+            do {
+                let user = try await fetchUser(for: userID)
+                nameLabel.text = user.name
+            } catch {
+                // エラーハンドリング
+            }
+        }
+    }
+}
+```
+
+わかりづらいですが、この `Task { }` は `Task` のイニシャライザの呼び出しです。 `{ }` は Trailing Closure なので、 `Task({ })` と書いているのと同じです。つまり、 `Task` のイニシャライザに、引数としてクロージャ式を渡しているということです。
+
+この `Task` のイニシャライザが受け取るクロージャの型が `@escaping () async -> Success` となっており、 `async` が付与されているので `{ }` の中で `async` 関数を呼び出すことができます。そのため、 `fetchUser` も問題なく呼び出せます。
+
+`Task` はイニシャライズされると即座に渡されたクロージャを実行しますが、その完了を待たずにイニシャライザは終了します。そのため、上記の例で `Task { }` がメインスレッドをブロックすることはありません。 `fetchUser` の結果を待たずに `viewDidAppear` は完了します。
+
+このように、 `Task` を使って同期関数から `async` 関数を開始することができます。 `viewDidAppear` の例を取り上げましたが、 `@IBAction` や（ iOS 14 からの） [`UIControl` の `addAction(_:for:)`](https://developer.apple.com/documentation/uikit/uicontrol/3600490-addaction) から `async` 関数を呼びたいときも同様です。
+
+ここで重要なのが、**すべての `async` 関数は必ず `Task` の上で実行される**ということです。 `async` 関数は `async` 関数からしか呼び出せないので、コールスタックを遡ると必ず同期関数から `async` 関数を呼び出す入口が必要となります。そこで `Task` が用いられるため、すべての `async` 関数は `Task` に紐付けられ、 `Task` 上で実行されます。
+
+:::message
+`Task` のイニシャライザに渡すクロージャには `@escaping` が付与されていますが、 `nameLabel.text = user.name` では明示的に `self.` を付けることなく `UserViewController` のプロパティにアクセスできています。これは、 [Implicit `self`](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md#implicit-self) と呼ばれるもので、 `Task` のイニシャライザなどいくつかの API で採用されています。
+
+[標準ライブラリのコード](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift)上では、現状で
+
+```swift
+@_implicitSelfCapture operation: __owned @Sendable @escaping () async -> Success
+```
+
+のように `@_implicitSelfCapture` という隠し属性を使って実現されています。
+
+これは、 `Task` のイニシャライザに渡されるクロージャはリファレンスサイクルを作らないからです。このクロージャは実行が完了すれば解法されるため、ここでキャプチャされた `self` がリファレンスサイクルを作り、メモリリークにつながる恐れはありません。そのような理由で Implicit `self` が用いられています。
 :::
