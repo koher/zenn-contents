@@ -567,6 +567,14 @@ func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) 
 
 なお、 `async let` で宣言された定数をスコープ内で `await` しなかった場合、スコープの抜ける前に自動的に `await` されます。
 
+Case 7 ですべての `async` 関数は Task の上で実行されると述べましたが、一つの Task は同時に一つの処理しか実行できません。 `async let` で呼び出される `async` 関数は並行に実行される必要があるため、同じ Task 上では実行することができません。このとき、元の Task から派生した Child Task が作られます。
+
+構造化によって Child Task は必ず親の Task より先に終わることが保証されています（ `async let` で宣言された定数は必ずスコープを抜ける前に `await` されるため）。 Child Task が親の Task とは独立に生き続けることはありません。この親子関係は木構造で表すことができます。
+
+![](/images/swift-concurrency-cheatsheet/task-tree.png)
+
+Child Task がさらに `async let` を用いるなどした場合、上図のように孫 Task が作られることになります。この場合でも構造化は生きており、必ず Task Tree の末端（葉）から順に終了することが保証されます。
+
 **参考文献**
 
 - [SE-0317: async let bindings](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md)
@@ -657,7 +665,7 @@ func fetchUserIcons(for ids: [User.ID]) async throws -> [User.ID: Data] {
 
 まず、 `(1)` でクロージャ式の引数として `group` を受け取ります。
 
-`(2)` で `addTask` メソッドを使って、 `group` に Task を追加します。 `addTask` で追加された Task は元の Task から派生した Child Task として扱われ、並行に実行されます。 `addTask` のクロージャの中の `(3)` で `await` をしていますが、 `addTask` 自体は `await` しておらず、このクロージャは並行して実行されるため、 `ids` のループは個々の `id` に対するダウンロードの結果を待たずにイテレートすることができます。
+`(2)` で `addTask` メソッドを使って、 `group` に Child Task を追加します。 `async let` の場合と同様に、それらの Child Task は並行に実行されます。 `addTask` のクロージャの中の `(3)` で `await` をしていますが、 `addTask` 自体は `await` しておらず、このクロージャは並行して実行されるため、 `ids` のループは個々の `id` に対するダウンロードの結果を待たずにイテレートすることができます。
 
 そのように並行で Child Task を実行した後で、 `group` から Child Task の結果を取り出すときに `await` する必要があります（ `(4)` ）。これは、 `async let` で宣言された定数を利用するときに `await` が必要なのとよく似ています。このような 2 段階の処理を行うことで、並行に処理を実行し、後で待ち合わせて結果を取得することが可能となっています。
 
@@ -665,7 +673,7 @@ func fetchUserIcons(for ids: [User.ID]) async throws -> [User.ID: Data] {
 
 最後に、 `(5)` で `return` した結果が `(1)` の `withThrowingTaskGroup` の結果として返されます。
 
-この一連の処理を振り返ると、 `addTask` で作られる Child Task のライフタイムが `group` に縛られており（ `withThrowingTaskGroup` のスコープを越えて生存できない）、並行処理が構造化されていることがわかります。
+この一連の処理を振り返ると、 `addTask` で作られる Child Task のライフタイムが `group` に縛られており（ `withThrowingTaskGroup` のスコープを越えて生存できない）、構造化されていることがわかります。
 
 :::message
 Case 9 のように固定個数の処理を並行で実行したい場合にも、 `async let` Binding ではなく `TaskGroup` を使うことができます。 `TaskGroup` が使えればどのようなケースにも対応できますが、コードがやや複雑になります。 `async let` Binding は固定個数の場合に、簡潔に並行処理を記述するためのものと考えると良いでしょう。
