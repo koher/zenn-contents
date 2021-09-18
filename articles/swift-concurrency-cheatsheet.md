@@ -1068,3 +1068,99 @@ Task {
 
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+## 💼 Case 15: 共有された状態の変更（インスタンス内でのメソッド呼び出し）
+
+Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンス内部から `Counter` のメソッドを呼ぶケースを考えてみます。
+
+ここでは、 2 回カウンターをインクリメントする `incrementTwice` メソッドを考えます。すでに `increment` メソッドがあるので、これを使って `incrementTwice` メソッドを実装します。
+
+### Before
+
+`DispatchQueue` & コールバック関数による `Counter` の場合、単純に考えると次のように `incrementTwice` メソッドを実装してしまいます。しかし、これは競合状態を引き起こします。
+
+:::details 競合状態を引き起こす実装
+```swift
+final class Counter {
+    private let queue: DispatchQueue = .init(label: ...)
+    private var count: Int = 0
+
+    func increment(completion: @escaping (Int) -> Void) { ... }
+
+    func incrementTwice(completion: @escaping (Int) -> Void) {
+        increment { [self] _ in
+            increment { count in
+                completion(count)
+            }
+        }
+    }
+}
+```
+:::
+
+一つの `Counter` に対して同時に `incrementTwice` メソッドを呼び出した場合、期待する結果は片方が 2 を、もう片方が 4 を返すことです。しかし、 `increment` メソッドのオペレーションは `queue` 上で実行されますが、 2 回のインクリメントはばらばらに `queue` に追加されます。そのため、 2 回インクリメントする途中の状態が外部から観測される可能性があります。前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+
+これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。そのために、同期的なインクリメントを行う `_increment` メソッドを実装し、**非**同期的な `increment` メソッドは `queue` 上で `_increment` を呼び出す形にします。また、 `incrementTwice` は `queue` 上で同期的に `_increment` メソッドを 2 回呼び出すようにします。
+
+```swift
+final class Counter {
+    private let queue: DispatchQueue = .init(label: ...)
+    private var count: Int = 0
+
+    private func _increment() -> Int {
+        count += 1
+        return count
+    }
+
+    func increment(completion: @escaping (Int) -> Void) {
+        queue.async { [self] in
+            _increment()
+            completion(count)
+        }
+    }
+
+    func incrementTwice(completion: @escaping (Int) -> Void) {
+        queue.async { [self] in
+            _increment()
+            _increment()
+            completion(count)
+        }
+    }
+}
+```
+
+このようにすれば、 3 のような途中の状態が外部から観測されるのを防ぐことができます。 `_increment` メソッドは `private` になっていることに注意して下さい。 `Counter` には外部からは `queue` を通してアクセスしなければならないため、 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
+
+`increment` メソッドや `incrementTwice` メソッドは `_increment` メソッドを呼び出していますが、一度 `queue` に乗せてしまえば同時に実行されることはないので、安心して `_increment` メソッドを呼び出すことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることがないので、 3 のような途中状態が観測されることはありません。
+
+このように、外部からは非同期に、内部からは一度 `queue` に乗ってしまえば同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし極論すれば、すべてのメソッドに同期版と非同期版を用意し、非同期版は `queue` 上で同期版を呼び出すような二重化が必要ということです。
+
+### After
+
+`actor` を用いれば難しいことは何もありません。 `incrementTwice` メソッドから単純に `increment` メソッドを 2 回呼び出すだけです。
+
+```swift
+actor Counter {
+    private var count: Int = 0
+
+    func increment() -> Int {
+        count += 1
+        return count
+    }
+
+    func incrementTwice() -> Int {
+        _ = increment()
+        _ = increment()
+        return count
+    }
+}
+```
+
+`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではすでにオペレーションがキュー上で実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
+
+これは、 Before で実現したかったこと（外部からは非同期（ `async` ）に、内部からは同期に）を自動的に実現しているということです。コードの二重化なしにこれを実現できるのが、 `actor` の最も重要な機能です。
+
+**参考文献**
+
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
