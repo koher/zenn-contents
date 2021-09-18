@@ -332,7 +332,7 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 ## 💼 Case 6: コールバックから `async` への変換
 
 :::message
-Case 6 には After しかありません。
+この Case には Before がありません。
 :::
 
 ### After
@@ -803,10 +803,10 @@ do {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 12: 非同期処理のキャンセル（非同期 API の実装側 (1) ）
+## 💼 Case 12: 非同期処理のキャンセル（非同期 API の実装側①）
 
 :::message
-Case 12 には After しかありません。
+この Case には Before がありません。
 :::
 
 ### After
@@ -871,3 +871,83 @@ func countPedestrians(in video: AVAsset) async throws -> Int {
 
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
+
+## 💼 Case 13: 非同期処理のキャンセル（非同期 API の実装側②）
+
+:::message
+この Case には Before がありません。
+:::
+
+### After
+
+`downloadData` 関数を `URLSession` の `dataTask` メソッドを使って実装する場合、次のようになります。この例では Case 12 のような方法でキャンセルを実装するのは困難です。実際の処理は `dataTask` メソッドの中に隠蔽されており、 `Task.checkCancellation()` を呼び出すために介入できる箇所がありません。
+
+:::details キャンセルできない例
+```swift
+func downloadData(from url: URL) async throws -> Data {
+    try await withCheckedThrowingContinuation { continuation in
+        let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                continuation.resume(throwing: error)
+                return
+            }
+            
+            if let response = response as? HTTPURLResponse {
+                guard response.statusCode == 200 else {
+                    continuation.resume(throwing: ServerError(statusCode: response.statusCode))
+                    return
+                }
+            }
+            
+            continuation.resume(returning: data!)
+        }
+        task.resume()
+    }
+}
+```
+:::
+
+このような場合には `withTaskCancellationHandler` 関数が役立ちます。
+
+```swift
+func downloadData(from url: URL) async throws -> Data {
+    var canceller: URLSessionDataTask?
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                if let response = response as? HTTPURLResponse {
+                    guard response.statusCode == 200 else {
+                        continuation.resume(throwing: ServerError(statusCode: response.statusCode))
+                        return
+                    }
+                }
+                
+                continuation.resume(returning: data!)
+            }
+            canceller = task
+            task.resume()
+        }
+    } onCancel: {
+        canceller?.cancel()
+    }
+}
+```
+
+Task がキャンセルされると、 `withTaskCancellationHandler` の `onCancel` に渡したクロージャが実行されます。これによってキャンセル時に介入し、 `task` のキャンセルにつなぐことができます。
+
+:::message alert
+上記のコードは [Proposal のコード](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md#cancellation-handlers) を参考に書かれていますが、残念ながら次のようなコンパイルエラーになります。
+
+```
+⛔ Reference to captured var 'urlSessionTask' in concurrently-executing code
+```
+
+これは、並行処理の安全性のために、 `var` で宣言された `canceller` を `onCancel` でキャプチャすることができないためです。
+
+同様の問題は Proposal のコードにも存在し、これもコンパイルすることができません。無理やりなワークアラウンドで回避することは可能ですが、良い解決法が見つかるまで Proposal に沿った上記のコードのままとしておきたいと思います。
+:::
