@@ -575,12 +575,6 @@ Case 7 ですべての `async` 関数は Task の上で実行されると述べ�
 
 Child Task がさらに `async let` を用いるなどした場合、上図のように孫 Task が作られることになります。この場合でも構造化は生きており、必ず Task Tree の末端（葉）から順に終了することが保証されます。
 
-**参考文献**
-
-- [SE-0317: async let bindings](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md)
-- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
-- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
-
 :::message
 Structured Programming は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 GOTO を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによって、コードの構造化によってそのような状況が改善されました。
 
@@ -600,6 +594,12 @@ for value in values {
 
 なお、 Structured Programming は Swift の発明ではありません。比較的新しい概念ですが、 Kotlin などに先行して取り入れられています。
 :::
+
+**参考文献**
+
+- [SE-0317: async let bindings](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md)
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
 ## 💼 Case 10: 並行処理（可変個数の場合）
 
@@ -678,3 +678,125 @@ func fetchUserIcons(for ids: [User.ID]) async throws -> [User.ID: Data] {
 :::message
 Case 9 のように固定個数の処理を並行で実行したい場合にも、 `async let` Binding ではなく `TaskGroup` を使うことができます。 `TaskGroup` が使えればどのようなケースにも対応できますが、コードがやや複雑になります。 `async let` Binding は固定個数の場合に、簡潔に並行処理を記述するためのものと考えると良いでしょう。
 :::
+
+**参考文献**
+
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [SE-0298: Async/Await: Sequences](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
+- [Meet AsyncSequence (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10058/)
+
+## 💼 Case 11: 非同期処理のキャンセル（非同期 API の利用側）
+
+非同期処理のキャンセルを正しく行うのは大変です。特に、非同期処理が別の非同期処理に依存している場合には、一連の非同期処理をすべて正しくキャンセルするには注意深くコードを書く必要があります。 Structured Concurrency は非同期処理のキャンセルを簡単にしてくれます。
+
+ここでは、 Case 4 などで見てきた `downloadData` 関数をキャンセルする例を考えてみます。
+
+### Before
+
+コールバック関数を用いた非同期関数の場合、戻り値を使ってキャンセルを実現されることが多いです。
+
+```swift
+func downloadData(
+    from url: URL,
+    cancellation: @escaping () -> Void,
+    completion: @escaping (Result<Data, Error>) -> Void
+) -> DownloadCanceller
+```
+
+上記のように、戻り値で canceller が返され、それを使ってキャンセルを実行します。また、キャンセルされたことをハンドリングできるように、 completion ハンドラーとは別にキャンセルをハンドリングするためのコールバック関数（上記の例では `cancellation` ）を渡す仕様になっていることもあるでしょう。
+
+ダウンロードボタンを押すとダウンロードを開始し、キャンセルボタンを押すとダウンロードをキャンセルする例を考えてみます。次のように `@IBAction` のメソッドの中で `downloadData` を呼び出し、 `canceller` を `ViewController` のプロパティに保存しておきます。
+
+```swift
+extension ViewController {
+    @IBAction func downloadButtonPressed(_ sender: UIButton) {
+        canceller = downloadData(from: url, cancellation: {
+            // キャンセル時の処理
+        }, completion: { data in
+            do {
+                let data = try data.get()
+                // data を使う処理
+            } catch {
+                //  エラーハンドリング
+            }
+        })
+    }
+}
+```
+
+キャンセルボタンが押されたときには、この `canceller` を使ってキャンセルを実行します。
+
+```swift
+extension ViewController {
+    @IBAction func cancelButtonPressed(_ sender: UIButton) {
+        canceller?.cancel()
+        canceller = nil
+    }
+}
+```
+
+`URLSession` の `dataTask` メソッドなども、これと似たような API 設計になっています（キャンセルのハンドリングは delegate を使いますが）。
+
+### After
+
+`async` 関数の場合、同じ手は使えません。戻り値は結果を返すために使われるからです。また、仮に戻り値で `(Data, DownloadCanceller)` のように結果と canceller をペアで返したとしても、それが得られるのは `await` で suspend してから resume された後です。 canceller を取得できるのは非同期処理が完了した後ということになり、意味がありません。
+
+`async` 関数をキャンセルするには `Task` を利用します。 Case 7 では `Task` のイニシャライザを使って非同期処理を開始するだけで、イニシャライズされた `Task` インスタンスは使いませんでした。その `Task` インスタンスには `cancel` メソッドが用意されており、 `cancel` メソッドを呼ぶことで Task をキャンセルすることができます。
+
+Before と同じように `task` を `ViewController` のプロパティに保存し、キャンセルボタンが押されたら `task` の `cancel` メソッドを使ってキャンセルします。
+
+```swift
+extension ViewController {
+    @IBAction func downloadButtonPressed(_ sender: UIButton) {
+        task = Task {
+            do {
+                let data = try await downloadData(from: url)
+                // data を使う処理
+            } catch {
+                if Task.isCancelled {
+                    // キャンセル時の処理
+                } else {
+                    //  エラーハンドリング
+                }
+            }
+        }
+    }
+}
+```
+
+```swift
+extension ViewController {
+    @IBAction func cancelButtonPressed(_ sender: UIButton) {
+        task?.cancel()
+        task = nil
+    }
+}
+```
+
+`cancel` メソッドが呼ばれた場合、 `async` 関数はエラーを `throw` することで処理を中断します。そのため、キャンセルのハンドリングは `catch` によって行います。
+
+キャンセルでもエラーが発生した場合でも、処理を中断することに違いはありません。それらのハンドリングに区別が要らない場合は単に `catch` すればいいですが、ときにはキャンセルとエラーを区別したい場合もあります。
+
+たとえば今回のケースでは、エラーが起こったらアラートを表示して、ユーザーにそれを知らせるのが親切でしょう。しかし、キャンセルボタンが押された場合にはユーザーの意思によるものなので、アラートを表示する必要はありません。このような場合、キャンセルかどうかを区別して分岐する必要があります。このような分岐は `Task.isCancelled` を調べることで実現できます。
+
+:::message
+慣例上、 Task がキャンセルされた場合には `CancellationError` が `throw` されることになっています。そのため、次のようなコードでもキャンセルをハンドリングできるように思えます。
+
+```swift
+do {
+    ...
+} catch let error as CancellationError {
+    // キャンセル時の処理
+} catch {
+    // エラーハンドリング
+}
+```
+
+しかし、キャンセル時に本当に `CancellationError` が `throw` されるかは実装依存であり、上記の方法は確実ではありません。まとめて `catch` してから `Task.isCancelled` で分岐することをおすすめします。
+:::
+
+**参考文献**
+
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
