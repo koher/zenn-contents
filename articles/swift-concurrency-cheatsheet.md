@@ -471,3 +471,120 @@ extension UserViewController {
 
 これは、 `Task` のイニシャライザに渡されるクロージャはリファレンスサイクルを作らないからです。このクロージャは実行が完了すれば解法されるため、ここでキャプチャされた `self` がリファレンスサイクルを作り、メモリリークにつながる恐れはありません。そのような理由で Implicit `self` が用いられています。
 :::
+
+## 💼 Case 9: 並行処理（固定個数の場合）
+
+ようやく並行処理です。並行処理は、複数の処理を同時に実行するための仕組みです。
+
+ここでは、例として大小二つのアイコンを並行してダウンロードすることを考えます。 SNS などでは用途に応じて解像度の異なる複数のユーザーアイコン画像が用意されている場合があります。 small と large 、二つのアイコンを並行してダウンロードする関数 `fetchUserIcons` を考えてみましょう。
+
+| small アイコン | large アイコン |
+|---|---|
+| ![](/images/swift-concurrency-cheatsheet/icon.png =60x) | ![](/images/swift-concurrency-cheatsheet/icon.png =180x) |
+
+## Before
+
+Case 4 などで見てきたコールバック版の `downloadData` 関数を使って、 `fetchUserIcons` 関数を実装します。
+
+並行処理自体は特に難しくありません。 `downloadData` 関数を二つ並べれば並行に実行されます。問題は二つの処理が終わるのを待ち合わせて completion ハンドラーを呼び出さなければならない点です。ここでは `DispatchGroup` を使って待ち合わせを実現しています（これは Before のコードで、本記事の主題ではないため、 `DispatchGroup` についての説明は省略します）。
+
+```swift
+func fetchUserIcons(for id: User.ID, completion:
+        @escaping (Result<(small: Data, large: Data), Error>) -> Void) {
+    let smallURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
+    let largeURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/large/\(id).png")!
+    
+    let group: DispatchGroup = .init()
+
+    var smallIcon: Result<Data, Error>!
+    group.enter()
+    downloadData(from: smallURL) { icon in
+        smallIcon = icon
+        group.leave()
+    }
+    
+    var largeIcon: Result<Data, Error>!
+    group.enter()
+    downloadData(from: largeURL) { icon in
+        largeIcon = icon
+        group.leave()
+    }
+    
+    group.notify(queue: .global()) {
+        do {
+            let icons = try (small: smallIcon.get(), large: largeIcon.get())
+            completion(.success(icons))
+        } catch {
+            completion(.failure(error))
+        }
+    }
+}
+```
+
+## After
+
+同じく、 Case 4 の `async` 版の `downloadData` 関数を使って `fetchUserIcons` 関数を実装します。
+
+次の「よくない例」のようなコードでは並行処理を実現できません。 small と large の二つのアイコンをダウンロードするために `downloadData` 関数を 2 回呼び出していますが、それぞれ `await` しているので small → large の順番にダウンロードすることになってしまいます。
+
+:::details よくない例
+```swift
+func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) {
+    let smallURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
+    let largeURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/large/\(id).png")!
+
+    let smallIcon = try await downloadData(from: smallURL)
+    let largeIcon = try await downloadData(from: largeURL)
+    let icons = (small: smallIcon, large: largeIcon)
+    return icons
+}
+```
+:::
+
+並行処理を実現するためには **`async let` Binding** を利用します。 `async` 関数を呼び出すときは `await` する必要がありますが、 `async let` Binding を利用すると `await` なしに `async` 関数を呼び出すことができます。
+
+```swift
+func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) {
+    let smallURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/small/\(id).png")!
+    let largeURL: URL = .init(string: "https://koherent.org/fake-service/data/user-icons/large/\(id).png")!
+
+    async let smallIcon = downloadData(from: smallURL) // (1)
+    async let largeIcon = downloadData(from: largeURL) // (2)
+    let icons = try await (small: smallIcon, large: largeIcon) // (3)
+    return icons
+}
+```
+
+`(1)` で `async let smallIcon = ...` のように `async let` で定数宣言を行い、右辺で `async` 関数を呼び出すことを `async let` Binding と呼びます。このとき、 `downloadData(from: smallURL)` に `await` は（ `try` も）必要なく、関数を呼び出すと結果を待たずに即時 `(2)` に進みます。
+
+`(2)` も同様で、 `downloadData(from: largeURL)` の関数呼び出し後、結果を待たずに即時 `(3)` に進みます。
+
+そして、 `async let` で宣言された定数を `(3)` で使おうとしたときに、初めて `await` が（ `try` も）必要になります。このようにして `await` を利用時まで遅らせることで、並行に関数を実行させることができます。
+
+`async let` にはもう一つ特筆すべき特徴があります。それは、 `async let` で宣言された定数は、そのスコープを抜ける前に必ず `await` されなければならないということです。 `async let` のまま `return` するなど、スコープの外に持ち出すことはできません。これによって、 `async let` で開始された非同期処理は、必ずその呼び出し元の `async` 関数よりも先に完了することが保証されています。このように非同期関数のライフタイムがスコープで構造化されていることが、 **Structured Concurrency** という名前の由来です。
+
+**参考文献**
+
+- [SE-0317: async let bindings](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md)
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
+
+:::message
+Structured Programming は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 GOTO を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによって、コードの構造化によってそのような状況が改善されました。
+
+たとえば、次のコードでは `for` 文の中に `if` 文がありますが、この `if` 文の分岐が `for` 文のスコープを越えて生き残ることはできません。
+
+```swift
+for value in values {
+    if value.isValid {
+        ...
+    } else {
+        ...
+    }
+}
+```
+
+これと同じように、 Structured Concurrency は並行処理のコードに、スコープによる構造化をもたらします。
+
+なお、 Structured Programming は Swift の発明ではありません。比較的新しい概念ですが、 Kotlin などに先行して取り入れられています。
+:::
