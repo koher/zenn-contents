@@ -1231,3 +1231,47 @@ Effectful Read-only Properties は名前の通り read-only です。今のと�
 - [SE-0310: Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md)
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+## Case 17: 共有された状態の変更（複数インスタンスの連携）
+
+:::message
+この Case には Before がありません。
+:::
+
+### After
+
+`acotr` のインスタンス内部からはメソッドが同期的に見えますが、これは同じインスタンス内部に限った話です。同じ型の `actor` であっても、インスタンスが異なれば内部に持つキューも異なります。そのため、別のインスタンスのメソッドを呼び出すときには `async` として扱う必要があります。
+
+ここでは、 `Counter` のインスタンスから別のインスタンスへカウントを転送する例を考えてみます。あまり現実的な例ではありませんが、これがカウンターではなく口座間送金などの処理であれば似たような状況が起こり得ます。
+
+今、 `Counter` は `increment` メソッドと `decrement` メソッドを持っているとし、別のカウンターにカウントを 1 だけ転送する `transferCount` メソッドを考えます。
+
+```swift
+actor Counter {
+    var count: Int = 0
+
+    func increment() -> Int {
+        count += 1
+        return count
+    }
+
+    func decrement() -> Int {
+        count -= 1
+        return count
+    }
+
+    func transferCount(to another: Counter) async {
+        _ = self.decrement()
+        _ = await another.increment()
+    }
+}
+```
+
+`transferCount` メソッドでは、自分のカウントをデクリメントしてから転送先カウンターのカウントをインクリメントします。こうすることでカウントが 1 転送されたように振る舞わせることができます。
+
+このとき、自分の `decrement` メソッドの呼び出しには特に問題はないですが、相手の `increment` メソッドは `async` に見えるので `await` が必要になります。このため、 `transferCount` メソッド自体も明示的に `async` である必要があります（これは、 `transferCount` メソッドを呼び出す場合に、たとえ同じインスタンス内からの呼び出しであっても `await` しなければならないことを意味します）。
+
+**参考文献**
+
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
