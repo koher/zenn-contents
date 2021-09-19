@@ -8,7 +8,7 @@ published: true
 
 Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が追加されました。これによって、 Swift で**非同期処理・並行処理のコードをより簡潔かつ安全に**書くことができるようになります。
 
-しかし、 Swift Concurrency は [Structured Concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md) や [Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md) など、多くの人にとって馴染みが薄いだろうと思われる概念を含みます。具体例を通して効率よく Swift Concurrency を習得できるように、本記事は、 Swift Concurrency 導入以前（ **Before** ）と導入後（ **After** ）で何がどのように変わるのか、 iOS アプリのコードを題材に紹介します。
+しかし、 Swift Concurrency は [Structured Concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md) や [Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md) など、多くの人にとって馴染みが薄いだろうと思われる概念を含みます。具体例を通して効率よく Swift Concurrency を習得できるように、本記事では iOS アプリを題材に、 Swift Concurrency 導入以前（ **Before** ）と導入後（ **After** ）のコードを比較することで、何がどのように変わるのかを紹介します。
 
 なお、 Swift Concurrency 関連の機能は次の三つに大別できるため、本記事の Before & After の例もそのように分類します。
 
@@ -17,7 +17,9 @@ Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が�
 - Actor
 
 :::message
-本記事の説明は前から読んで理解できるように書かれています。ただ、一度概念を理解した後はチートシートとして、やりたいことベースでコードの書き方を調べることもできます。そのような場合には目次をご活用下さい。
+本記事は iOSDC Japan 2021 のセッション ["async/awaitやactorでiOSアプリ開発がどう変わるか Before&Afterの具体例で学ぶ"](https://fortee.jp/iosdc-japan-2021/proposal/19c076c3-18cb-4d04-9e9d-59cc02220538) をベースにテキスト化したものです。
+
+本記事の説明は前から読んで理解できるように書かれていますが、チートシートとしてやりたいことベースでコードの書き方を調べることもできます。そのような場合には目次をご活用下さい。
 :::
 
 # `async` / `await`
@@ -26,11 +28,11 @@ Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が�
 
 ## 💼 Case 1: 非同期関数の利用（エラーハンドリングがない場合）
 
-非同期処理はエラーハンドリングを必要とするケースが多いですが、まずは理解しやすいようにエラーハンドリングを伴わない例を考えてみます。
+非同期処理はエラーハンドリングを必要とする場合が多いですが、まずは理解しやすいようにエラーハンドリングを伴わない例を考えてみます。
 
 ### Before
 
-非同期関数はこれまで、実行結果を非同期に受け取るために、主に completion ハンドラーなどのコールバック関数を用いて書かれてきました。
+非同期関数が結果を非同期的に受け取るために、これまでは主にコールバック関数（ completion ハンドラーなど）が用いられてきました。
 
 コールバック関数を用いると、たとえば URL を指定してデータをダウンロードし、結果としてバイト列を受け取る関数は、次のような形で宣言されます。
 
@@ -65,9 +67,9 @@ let data = await downloadData(from: url)
 // data を使う処理
 ```
 
-戻り値として結果を受け取るため、クロージャ式はどこにも現れません。 `downloadData` はデータをダウンロードする関数なので、その結果を戻り値として返すのは自然な形です。
+戻り値として結果を受け取るため、クロージャ式はどこにも現れません。 `downloadData` はデータをダウンロードする関数なので、その結果を戻り値として返すのは自然です。
 
-`throws` が付与された関数を呼び出す場合に `try` を書く必要があるのと同様に、 `async` が付与された関数を呼び出すときには `await` を書くことが必須となります。
+`async` 関数を呼び出すときには `await` を付けることが必須です。 `await` を書かないとコンパイルエラーになります。これは、 `throws` が付与された関数を呼び出す場合に `try` が必須なのと同様です。
 
 :::message
 この `downloadData` 関数は普通の関数と似た見た目をしていますが、非同期的に実行されることに注意が必要です。 `downloadData` を呼び出すと処理が suspend （中断）され、非同期的に結果が得られてから続きが resume （再開）されます。
@@ -82,7 +84,7 @@ print("B") // "A" と同じスレッドとは限らない
 
 `downloadData` の呼び出し後にどのようなスレッドで処理が再開されるかは `downloadData` の実装次第です。
 
-このことは、コールバック関数を用いて書かれた次のコードで、 `print("A")` と `print("B")` が同じスレッドで実行されるとは限らないことと同じです。
+このことは、コールバック関数を用いて書かれた次のコードで、 `print("A")` と `print("B")` が同じスレッドで実行されるとは限らないのと同じことです。
 
 ```swift
 print("A")
@@ -92,6 +94,11 @@ downloadData(from: url) { data in
 ```
 :::
 
+**参考文献**
+
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
+
 ## 💼 Case 2: 非同期関数の実装（エラーハンドリングがない場合）
 
 Case 1 では非同期関数を利用するコードを扱いましたが、次は自分で非同期関数を実装する場合を考えます。
@@ -100,7 +107,7 @@ Case 1 では非同期関数を利用するコードを扱いましたが、次�
 
 API を叩いて JSON を取得し、それをデコードする関数を考えます。
 
-ユーザーの JSON を取得・デコードして返す非同期関数 `fetchUser` は、 Case 1 の `downloadData` 関数を用いて次のように書けます。ユーザーの ID を受け取り、 completion ハンドラーで `User` を返します。
+ここでは例として、ユーザーの JSON を取得・デコードして返す非同期関数 `fetchUser` を考えてみます。 Case 1 の `downloadData` 関数を用いると、 `fetchUser` 関数は次のように書けます。ユーザーの ID を受け取り、 completion ハンドラーで `User` を返します。
 
 ```swift
 func fetchUser(for id: User.ID, completion: @escaping (User) -> Void) {
@@ -113,7 +120,7 @@ func fetchUser(for id: User.ID, completion: @escaping (User) -> Void) {
 }
 ```
 
-`downloadData` の completion ハンドラーとして渡したクロージャ式の中で JSON を受け取ってデコードし、得られた結果を `fetchUser` が受け取った completion ハンドラーに渡します。
+`downloadData` に渡したクロージャ式の中で JSON を受け取ってデコードし、得られた結果を `fetchUser` が受け取った completion ハンドラーに渡します。
 
 ### After
 
@@ -129,7 +136,14 @@ func fetchUser(for id: User.ID) async -> User {
 }
 ```
 
+ポイントは、 `fetchUser` 関数の宣言に `async` を付与することです。
+
 completion ハンドラーを使わずに戻り値として結果を返せば良いため、デコードされた `user` を単純に `return` します。
+
+**参考文献**
+
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
 ## 💼 Case 3: 非同期関数の利用（エラーハンドリングがある場合）
 
@@ -137,7 +151,7 @@ completion ハンドラーを使わずに戻り値として結果を返せば良
 
 ### Before
 
-Case 1 の `downloadData` 関数がエラーを引き起こす場合を考えます。結果として `Data` か `Error` かを受け取る必要があるため、 completion ハンドラーの引数の型が `Result<Data, Error>` となっています。
+Case 1 の `downloadData` 関数がエラーを引き起こす場合を考えます。処理の結果として `Data` または `Error` を受け取る必要があるため、 completion ハンドラーの引数の型が `Result<Data, Error>` となっています。
 
 ```swift
 func downloadData(from url: URL,
@@ -158,7 +172,7 @@ downloadData(from: url) { result in
 ```
 
 :::message
-`result` のエラーハンドリングは `switch` 文を使ってパターンマッチングで行うこともできます。筆者は、エラーハンドリング専用の `catch` を使った方が可読性が高いと思うので、このような書き方をしています。
+`result` のエラーハンドリングは `switch` 文を使ってパターンマッチングで行うこともできます。筆者は、エラーハンドリング専用の `catch` を使った方が可読性が高いと思うので、このような書き方をしています。複数のエラーをまとめてハンドリングしたい場合にも便利です。
 :::
 
 ### After
@@ -169,7 +183,7 @@ downloadData(from: url) { result in
 func downloadData(from url: URL) async throws -> Data
 ```
 
-エラーを返す可能性があるため、 `async` に加えて `throws` が付与されています。 `async throws` はこの順である必要があります。
+エラーを返す可能性があるため、 `async` に加えて `throws` が付与されています。 `async throws` はこの順に記述する必要があります。
 
 これを利用するコードは次のようになります。
 
@@ -187,7 +201,7 @@ do {
 `async throws` が付与されている場合、関数を呼び出すときには `try await` を書く必要があります。 `try await` はこの順である必要があります。
 
 :::message
-`try await` が `async throws` と順番がひっくり返っていることが（ `async` に `await` が、 `throws` に `try` が対応するなら `await try` でないかと）気になるかもしれません。この順番に関しては、すべてが宣言の逆になっていると覚えると覚えやすいです。
+`try await` と `async throws` で順番が逆になっていることが（ `async` に `await` が、 `throws` に `try` が対応するなら `await try` でないかと）気になるかもしれません。この順番については、利用と宣言で順番が逆になると覚えると覚えやすいです。
 
 たとえば、 `downloadData` の宣言時
 
@@ -201,9 +215,9 @@ func downloadData(from url: URL) async throws -> Data
 let data = try await downloadData(from: url)
 ```
 
-には `data`, `try`, `await`, `downloadData` と順番が反転します。
+には `data`, `try`, `await`, `downloadData` と順番が逆転します。
 
-理論的には、 `throws` が `Result` を返すのと同等と考えるのと同じように、 `async` が `Future` を返すのと同等だと考えると、非同期かつエラーになりうる関数の戻り値は `Future<Result<Foo>>` であってほしいと考えられます。もし `Result<Future<Foo>>` だと同期的にエラーであるかが決まってしまうため、非同期的なエラーを扱うことができません。非同期的に得られる結果（ `Future` ）が成功か失敗か（ `Result` ）でなければならないため、 `Future` が外側である必要があります。これに対応させると `async throws` という順になります。
+理論的には次のように説明できます。 `throws` は `Result` を返すのと同等です。同じように、 `async` は `Future` を返すのと同等と考えることができます（この `Future` は Combine のものと違い、純粋に非同期処理だけを扱い、エラーを扱わないものとします）。このとき、非同期かつエラーになりうる関数の戻り値は `Future<Result<Foo>>` にようになってほしいはずです。もし `Result<Future<Foo>>` だとエラーであるかが同期的に決まってしまうため、非同期的に得られるエラーを扱うことができません。非同期的に得られる結果（ `Future` ）が、成功か失敗か（ `Result` ）であるため、 `Future` が外側である必要があります。これに対応させると `async throws` という順になります。
 
 `Future<Result<Foo>>` を剥がして `Foo` を取り出すときには、まず `Future` を剥がしてから `Result` を剥がさなければなりません。そのため、先に `await` するために `try (await foo)` である必要があり、 `try await` の順となります。
 :::
@@ -231,7 +245,7 @@ func fetchUser(for id: User.ID,
 }
 ```
 
-`downloadData` が `result` を受け取るため、これを `do` - `try` - `catch` でエラーハンドリングして、エラーを `catch` した場合にはそれを completion ハンドラーに渡します。
+`downloadData` が `result` を受け取るため、これを `do` - `try` - `catch` でエラーハンドリングします。エラーを `catch` した場合にはそれを completion ハンドラーに渡します。
 
 ### After
 
@@ -249,15 +263,15 @@ func fetchUser(for id: User.ID) async throws -> User {
 
 Before と比べてずいぶんとすっきりしています。見比べると、 After には `do` - `try` - `catch` が存在しないことがわかります。
 
-これは、 `downloadData` や `JSONDecoder.decode` の `try` を、 `fetchUser` の `throws` で受けているためです。わざわざ `catch` して `throw` しなおさなくても、 `fetchUser` には `throws` が付与されているのでそのままエラーを投げることができ、 `catch` して completion ハンドラーにリレーしている Before と比べてコードが簡潔になっています。
+これは、 `downloadData` や `JSONDecoder.decode` の `try` を、 `fetchUser` の `throws` で受けているためです。わざわざ `catch` して `throw` しなおさなくても、 `fetchUser` には `throws` が付与されているのでそのままエラーを投げることができます。そのため、エラーを `catch` して completion ハンドラーにリレーしている Before と比べてコードが簡潔になっています。
 
-Swift には Swift 2.0 の頃から、言語の提供するエラーハンドリング機構として `throws` / `try` がありました。しかし、エラーハンドリングを必要とすることの多い非同期処理では、コールバック関数を挟むため `throws` / `try` を上手く活用することができませんでした。 `async` / `throws` は上記の例のように `trhows` / `try` と相性がよく、 `async` / `await` が導入されたことで `throws` / `try` も活用しやすくなります。
+Swift には Swift 2.0 の頃から、言語の提供するエラーハンドリング機構として `throws` / `try` がありました。しかし、エラーが発生し得ることの多い非同期処理では、コールバック関数を挟むため `throws` / `try` を上手く活用することができませんでした（関数に `throws` を付与してハンドリングさせることができず、コールバック関数に `Result` を渡すことでエラーを扱っていました）。 `async` / `await` は上記の例のように `trhows` / `try` と相性がよく、 `async` / `await` が導入されたことで `throws` / `try` もより活用しやすくなります。
 
 ## 💼 Case 5: 非同期関数の連結
 
 次は二つの非同期処理を連結する場合についてです。
 
-ここでは、例としてユーザーのアイコンを取得する関数 `fetchUserIcon` を考えます。ただし、アイコンの URL は ユーザーの JSON の中に書かれており、
+ここでは例として、ユーザーのアイコンを取得する関数 `fetchUserIcon` を考えます。ただし、アイコンの URL は ユーザーの JSON の中に書かれており、
 
 1. JSON をダウンロードしてデコードし、アイコンの URL を取得
 2. アイコンの URL にアクセスしてダウンロード
@@ -266,7 +280,7 @@ Swift には Swift 2.0 の頃から、言語の提供するエラーハンドリ
 
 ### Before
 
-この 2 段階の非同期処理をコールバック関数を用いて書くと次のようになります。
+この 2 段階の非同期処理をコールバック関数を用いて書くと次のようになります。複雑なコードになっていますが、ポイントはコールバック関数がネストしていることです。
 
 ```swift
 func fetchUserIcon(for id: User.ID,
@@ -292,16 +306,14 @@ func fetchUserIcon(for id: User.ID,
 }
 ```
 
-複雑なコードになっていますが、ポイントはコールバック関数がネストしていることです。
-
 最初に JSON をダウンロードするために `downloadData` 関数を呼び出し、結果をクロージャ式で受けています `(1)` 。そして、その JSON をデコードした後に得られた `iconURL` から、再び `downloadData` 関数でアイコンをダウンロードします `(2)` 。
 
-この二つの非同期処理結果をそれぞれコールバック関数で受け取るため、コールバック関数がネストします。このように、非同期処理を連結するとその度にコールバック関数がネストし、いわゆるコールバック地獄と呼ばれる状態を作り出してしまいます。
+この二つの非同期処理の結果をそれぞれコールバック関数で受け取るため、コールバック関数がネストします。このように、非同期処理を連結するとその度にコールバック関数がネストし、いわゆるコールバック地獄と呼ばれる状態を作り出してしまいます。
 
 :::message
 コールバック地獄の解消には `Future` が用いられることもあります。 Combine を導入して `Future` と `flatMap` を用いればネストを解消することができます。
 
-しかし、 `async` / `await` の方が簡潔でパフォーマンスもよく、 Swift Concurrency が使えるなら、あえて `Future` を使うべきケースは限定的でしょう（どうしても `Publisher` として扱いたい場合など）。
+しかし、 `async` / `await` の方が簡潔でパフォーマンスもよく、 `async` / `await` が使えるなら、あえて `Future` を使うべきケースは限定的でしょう（どうしても `Publisher` として扱いたい場合など）。
 :::
 
 ### After
@@ -319,13 +331,13 @@ func fetchUserIcon(for id: User.ID) async throws -> Data {
 }
 ```
 
-コールバック関数を用いた場合と異なり、非常に簡潔です。 JSON をダウンロードし、デコードし、得られた URL からアイコンをダウンロードするという 3 段階の処理が、そのまま 3 行のコードに現れています。
+コールバック関数を用いた場合と異なり、非常に簡潔です。 JSON をダウンロードし、デコードし、得られた URL からアイコンをダウンロードするという 3 段階の処理が、そのまま 3 行のコードとして現れています。
 
 今、やりたいことの本質はこの三つのはずです。逆に言えば、 Before の複雑なコードのほとんどは、本質的なオペレーションとは関係のない、非同期処理を扱うためのボイラープレートだと言えます。
 
-Before のコードが複雑になっている原因の一つは、それぞれのコールバック関数で別々にエラーハンドリングが行われていることです。この二つの `do` - `try` - `catch` を一つにまとめることはできません。 `do` - `try` - `catch` がコールバックのクロージャ式を越えることができないからです。一方で、 `async` / `await` を使うと、いくつの非同期処理を連結しても、すべての `try` を `throws` に引き受けさせることができます。これが、 `async` / `await` を利用するコードが著しく簡潔になっている理由です。
+Before のコードが複雑になっている原因の一つは、それぞれのコールバック関数で別々にエラーハンドリングが行われていることです。この二つの `do` - `try` - `catch` を一つにまとめることはできません。 `do` - `try` - `catch` がコールバックのクロージャ式を越えることができないからです。 `async` / `await` を使うと、いくつの非同期処理を連結しても、すべての `try` を `throws` に引き受けさせることができます。これが、 `async` / `await` を利用するコードが著しく簡潔になっている理由です。
 
-さらに、 Before のコードでは何箇所にも分散して `completion` の呼び出しを書かなければなりません。たとえば、もしエラーを `catch` したときにログ出力だけして `completion(.failure(error))` を忘れてしまうと、その非同期関数は永久に結果を返さない関数になってしまいます。 `async` 関数の場合、戻り値か `throws` で結果を返すため、そのようなことは決して起こりません。戻り値を `return` しなければコンパイルエラーになりますし、エラーが発生した場合にはそれを `throw` する以外に脱出する手段が存在しないからです。
+さらに、 Before のコードでは何箇所にも分散して `completion` の呼び出しを書かなければなりません。たとえば、もしエラーを `catch` したときにログ出力だけして `completion(.failure(error))` を忘れてしまうと、その非同期関数は永久に結果を返さない関数になってしまいます。このようなバグは発見するのが困難です。 `async` 関数の場合、必ず戻り値か `throws` で結果を返す必要があるため、そのようなことは起こりません。戻り値を `return` しなければコンパイルエラーになりますし、エラーが発生した場合にはそれを `throw` する以外に脱出する手段が存在しないからです。
 
 つまり `async` / `await` を使うと、コードが簡潔になるだけでなく、安全にもなるということです（さらに言えば、パフォーマンスも向上します）。
 
@@ -337,11 +349,11 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 
 ### After
 
-これまでの Case で `async` / `await` が優れているのはわかりましたが、現実問題としてすべてがすぐに `async` / `await` になるわけではありません。たとえば、利用しているサードパーティライブラリの非同期 API がコールバックのままになっているかもしれません。
+これまでの Case で `async` / `await` が優れているのはわかりました。しかし現実問題として、すべての API がすぐに `async` / `await` になるわけではありません。たとえば、利用しているサードパーティライブラリの非同期 API がコールバックのままになっているかもしれません。
 
 そのような場合でも、コールバック版をラップして `async` 版を自力実装することができれば、アプリケーションコードは `async` / `await` で記述することができます。そんなときに活躍するのが Continuation です。
 
-次の、コールバック版の `downloadData` 関数を使って、 `async` 版の `downloadData` 関数を実装します。
+コールバック版の `downloadData` 関数を使って、 `async` 版の `downloadData` 関数を実装することを考えてみます。
 
 ```swift
 // コールバック
@@ -354,24 +366,24 @@ func downloadData(from url: URL,
 ```swift
 // async
 func downloadData(from url: URL) async throws -> Data {
-    try await withCheckedThrowingContinuation { continuation in
-        downloadData(from: url) { result in
+    try await withCheckedThrowingContinuation { continuation in // (2)
+        downloadData(from: url) { result in // (1)
             do {
                 let data = try result.get()
-                continuation.resume(returning: data)
+                continuation.resume(returning: data) // (3)
             } catch {
-                continuation.resume(throwing: error)
+                continuation.resume(throwing: error) // (4)
             }
         }
     }
 }
 ```
 
-`async` 版の `downloadData` 関数の中でコールバック版の `downloadData` 関数を呼び出しても、その結果はコールバック関数の引数としてしか受け取れません。なんとかそれを `async` 版の戻り値として `return` しなければ（もしくは、エラーの場合は `throw` しなければ）なりません。
+コールバック版の `downloadData` 関数を呼び出しても、その結果はコールバック関数の引数としてしか受け取れません `(1)` 。なんとかそれを `async` 版の戻り値として `return` しなければ（もしくは、エラーの場合は `throw` しなければ）なりません。
 
-この変換を行ってくれるのが、新しく標準ライブラリに追加された `withCheckedThrowingContinuation` 関数です。 `withCheckedThrowingContinuation` 関数に渡されたクロージャは、引数として `continuation` を受け取ります。 `continuation` の `resume(returning:)` メソッドに結果を渡せばそれを `withCheckedThrowingContinuation` の戻り値として `return` してくれますし、 `resume(throwing:)` メソッドにエラーを渡せばエラーとして `throw` してくれます。
+この変換を行ってくれるのが、新しく標準ライブラリに追加された `withCheckedThrowingContinuation` 関数です。 `withCheckedThrowingContinuation` 関数に渡されたクロージャは、引数として `continuation` を受け取ります `(2)`。 `continuation` の `resume(returning:)` メソッドに結果を渡せばそれを `withCheckedThrowingContinuation` の戻り値として `return` してくれますし `(3)`、 `resume(throwing:)` メソッドにエラーを渡せばエラーとして `throw` してくれます `(4)`。
 
-なお、今回のようにコールバック関数が `Result` を受け取っている場合には、 `conitnuation` の `resume(with:)` メソッドが役立ちます。結果とエラーをそれぞれ `resume(returning:)` と `resume(throwing:)` に渡す代わりに、 `resume(with:)` メソッドは直接 `Result` を受け取ります。
+なお、今回のようにコールバック関数が `Result` を受け取っている場合には、 `conitnuation` の `resume(with:)` メソッドが便利です。結果とエラーをそれぞれ `resume(returning:)` と `resume(throwing:)` に渡す代わりに、 `resume(with:)` メソッドに直接 `Result` を渡すことができます。
 
 ```swift
 // async （ resume(with:) を使う場合）
@@ -387,7 +399,7 @@ func downloadData(from url: URL) async throws -> Data {
 :::message
 もし `throws` が必要ない場合には、代わりに `withCheckedContinuation` 関数を利用します。
 
-また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。 `withChecked(Throwing)Continuation` では、複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーを引き起こしますが、 `withUnsafe(Throwing)Continuation` ではそのようなケースで未定義動作となります（チェックしない分、わずかにパフォーマンスが向上します）。
+また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。これらの関数を利用した場合、 `continuation` がチェックを行わない分だけわずかにパフォーマンスが向上します。その代わり、 `withChecked(Throwing)Continuation` が行っていたチェック（複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーで知らせる）が行われません。個人的には、一般的なアプリケーションでは `withChecked(Throwing)Continuation` が適切なケースが多いのではないかと思います。
 :::
 
 # Structured Concurrency
@@ -396,13 +408,13 @@ func downloadData(from url: URL) async throws -> Data {
 
 ## 💼 Case 7: 非同期処理の開始
 
-Concurrency と言いながら、 Case 7 ではまだ非同期処理を扱います。ここでは、同期関数から非同期関数を呼び出すケースを扱います。
+同期関数から非同期関数を呼び出すケースを考えます。
 
-例として、ユーザー情報を表示する View Controller 、 `UserViewController` を考えます。 `viewDidAppear` で Case 4 の `fetchUser` 関数を呼び出し、ユーザー情報を取得、画面上に表示します。
+例として、ユーザー情報を表示する View Controller 、 `UserViewController` を考えてみます。 `UserViewController` は `viewDidAppear` で（ Case 4 の） `fetchUser` 関数を呼び出し、ユーザー情報を取得、画面上に表示します。 `viewDidAppear` は同期的なメソッドなので、同期→非同期の呼び出しが必要になります。
 
 ### Before
 
-従来のコールバックによる非同期関数を呼び出す場合、特に難しいところはありません。単に `viewDidAppear` から `fetchUser` を呼び出すだけです。
+コールバックによる従来型の非同期関数を呼び出す場合、特に難しいところはありません。単に `viewDidAppear` から `fetchUser` を呼び出すだけです。
 
 ```swift
 extension UserViewController {
@@ -425,13 +437,13 @@ extension UserViewController {
 
 `fetchUser` が `async` 関数の場合、次のような問題があります。
 
-`async` / `await` には、 `async` 関数は `async` 関数の中でしか呼び出せないという制約があります。もし、（ `async` でない）普通の関数の中で `async` 関数を呼び出すとコンパイルエラーになります。これは `throws` が付与された関数は `throws` が付与された関数の中でしか呼び出せないのと同じです。
+`async` / `await` には、 `async` 関数は `async` 関数の中でしか呼び出せないという制約があります。もし、（ `async` でない）普通の関数の中で `async` 関数を呼び出すとコンパイルエラーになります。これは、 `throws` が付与された関数は、 `throws` が付与された関数の中でしか呼び出せないのと同じことです。
 
-`throws` の場合は `do` - `try` - `catch` でハンドリングすることで、 `throws` が付与されて**いない**関数の中で呼び出すことができました。しかし `async` には `catch` に相当するものがありません。
+`throws` の場合は `do` - `try` - `catch` でハンドリングすることで、 `throws` が付与されて**いない**関数の中でも呼び出すことができました。しかし `async` には `catch` に相当するものがありません。
 
 では、 `veiwDidAppear` から `fetchUser` を呼び出すにはどうすれば良いでしょうか。 `veiwDidAppear` は `async` メソッドでないため、 `veiwDidAppear` の中で `async` な `fetchUser` 関数を呼び出すことはできません。
 
-そんなときに役立つのが `Task` です。 `Task` を使うと、次のようにして、 `veiwDidAppear` の中から `async` な `fetchUser` 関数を呼び出すことができます。
+そんなときに役立つのが `Task` です。 `Task` を使うと次のようにして、（同期的な） `veiwDidAppear` の中から、 `async` な `fetchUser` 関数を呼び出すことができます。
 
 ```swift
 extension UserViewController {
@@ -450,15 +462,15 @@ extension UserViewController {
 }
 ```
 
-わかりづらいですが、この `Task { }` は `Task` のイニシャライザの呼び出しです。 `{ }` は Trailing Closure なので、 `Task({ })` と書いているのと同じです。つまり、 `Task` のイニシャライザに、引数としてクロージャ式を渡しているということです。
+わかりづらいですが、この `Task { }` は `Task` のイニシャライザの呼び出しです。 `{ }` は Trailing Closure なので、 `Task({ })` と書いているのと同じです。つまり、 `Task` のイニシャライザに、引数としてクロージャ式を渡している形です。
 
-この `Task` のイニシャライザが受け取るクロージャの型が `@escaping () async -> Success` となっており、 `async` が付与されているので `{ }` の中で `async` 関数を呼び出すことができます。そのため、 `fetchUser` も問題なく呼び出せます。
+この `Task` のイニシャライザに渡すクロージャの型は `@escaping () async -> Success` です。これに `async` が付与されているので、 `{ }` の中で `async` 関数を呼び出すことができます。そのため、 `fetchUser` も問題なく呼び出せます。
 
 `Task` はイニシャライズされると即座に渡されたクロージャを実行しますが、その完了を待たずにイニシャライザは終了します。そのため、上記の例で `Task { }` がメインスレッドをブロックすることはありません。 `fetchUser` の結果を待たずに `viewDidAppear` は完了します。
 
-このように、 `Task` を使って同期関数から `async` 関数を開始することができます。 `viewDidAppear` の例を取り上げましたが、 `@IBAction` や（ iOS 14 からの） [`UIControl` の `addAction(_:for:)`](https://developer.apple.com/documentation/uikit/uicontrol/3600490-addaction) から `async` 関数を呼びたいときも同様です。
+このように、 `Task` を使えば同期関数から `async` 関数を開始することができます。 `viewDidAppear` の例を取り上げましたが、 `@IBAction` や（ iOS 14 からの） [`UIControl` の `addAction(_:for:)`](https://developer.apple.com/documentation/uikit/uicontrol/3600490-addaction) などで `async` 関数を呼びたいときも同様です。
 
-ここで重要なのが、**すべての `async` 関数は必ず `Task` の上で実行される**ということです。 `async` 関数は `async` 関数からしか呼び出せないので、コールスタックを遡ると必ず同期関数から `async` 関数を呼び出す入口が必要となります。そこで `Task` が用いられるため、すべての `async` 関数は `Task` に紐付けられ、 `Task` 上で実行されます。
+ここで重要なのが、**すべての `async` 関数は必ず `Task` の上で実行される**ということです。 `async` 関数は `async` 関数からしか呼び出せないので、コールスタックを遡ると必ず `async` 関数を呼び出す入口が必要となります。そこで `Task` が用いられるため、すべての `async` 関数は `Task` に紐付けられ、 `Task` 上で実行されます。
 
 :::message
 `Task` のイニシャライザに渡すクロージャには `@escaping` が付与されていますが、 `nameLabel.text = user.name` では明示的に `self.` を付けることなく `UserViewController` のプロパティにアクセスできています。これは、 [Implicit `self`](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md#implicit-self) と呼ばれるもので、 `Task` のイニシャライザなどいくつかの API で採用されています。
@@ -469,9 +481,15 @@ extension UserViewController {
 @_implicitSelfCapture operation: __owned @Sendable @escaping () async -> Success
 ```
 
-のように `@_implicitSelfCapture` という隠し属性を使って実現されています。
+のように `@_implicitSelfCapture` という隠し属性を使って実現されているようです。
 
-これは、 `Task` のイニシャライザに渡されるクロージャはリファレンスサイクルを作らないからです。このクロージャは実行が完了すれば解法されるため、ここでキャプチャされた `self` がリファレンスサイクルを作り、メモリリークにつながる恐れはありません。そのような理由で Implicit `self` が用いられています。
+なぜ `self` を暗黙的に strong キャプチャしても問題ないのでしょうか。その理由は、 `Task` のイニシャライザに渡されるクロージャはリファレンスサイクルを作らないからです。このクロージャは実行が完了すれば解放されるため、ここでキャプチャされた `self` がリファレンスサイクルを作り、メモリリークにつながる恐れはありません。そのような理由で Implicit `self` が採用されています。
+:::
+
+## 💼 Case 8: （欠番）
+
+:::message
+iOSDC Japan 2021 の発表とそろえるため、 Case 8 は欠番とします。
 :::
 
 ## 💼 Case 9: 並行処理（固定個数の場合）
@@ -486,9 +504,11 @@ extension UserViewController {
 
 ## Before
 
-Case 4 などで見てきたコールバック版の `downloadData` 関数を使って、 `fetchUserIcons` 関数を実装します。
+（ Case 4 などで見てきた）コールバック版の `downloadData` 関数を使って、 `fetchUserIcons` 関数を実装します。
 
-並行処理自体は特に難しくありません。 `downloadData` 関数を二つ並べれば並行に実行されます。問題は二つの処理が終わるのを待ち合わせて completion ハンドラーを呼び出さなければならない点です。ここでは `DispatchGroup` を使って待ち合わせを実現しています（これは Before のコードで、本記事の主題ではないため、 `DispatchGroup` についての説明は省略します）。
+コールバック版の場合、並行処理自体は特に難しくありません。 `downloadData` 関数を二つ並べれば並行に実行されます。
+
+問題は二つの処理が終わるのを待ち合わせて completion ハンドラーを呼び出さなければならない点です。ここでは `DispatchGroup` を使って待ち合わせを実現しています（ `DispatchGroup` の使い方については本題ではないので説明を省略します）。
 
 ```swift
 func fetchUserIcons(for id: User.ID, completion:
@@ -525,9 +545,9 @@ func fetchUserIcons(for id: User.ID, completion:
 
 ## After
 
-同じく、 Case 4 の `async` 版の `downloadData` 関数を使って `fetchUserIcons` 関数を実装します。
+同じく、（ Case 4 の） `async` 版の `downloadData` 関数を使って `fetchUserIcons` 関数を実装します。
 
-次の「よくない例」のようなコードでは並行処理を実現できません。 small と large の二つのアイコンをダウンロードするために `downloadData` 関数を 2 回呼び出していますが、それぞれ `await` しているので small → large の順番にダウンロードすることになってしまいます。
+次の「よくない例」のようなコードでは並行処理を実現できません。 small と large の二つのアイコンをダウンロードするために `downloadData` 関数を 2 回呼び出していますが、それぞれ `await` しているので、 small をダウンロードしてから large をダウンロードと、順番にダウンロードすることになってしまいます。
 
 :::details よくない例
 ```swift
@@ -545,7 +565,7 @@ func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) 
 
 並行処理を実現するためには **`async let` Binding** を利用します。 `async` 関数を呼び出すときは `await` する必要がありますが、 `async let` Binding を利用すると `await` なしに `async` 関数を呼び出すことができます。
 
-`async let` Binding を利用すると、次のように Before と比べてはるかに簡潔に並行処理のコードを書くことができます。
+`async let` Binding を利用すると、次のように Before と比べてはるかに簡潔に並行処理のコードを記述することができます。
 
 ```swift
 func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) {
@@ -559,26 +579,28 @@ func fetchUserIcons(for id: User.ID) async throws -> (small: Data, large: Data) 
 }
 ```
 
-`(1)` で `async let smallIcon = ...` のように `async let` で定数宣言を行い、右辺で `async` 関数を呼び出すことを `async let` Binding と呼びます。このとき、 `downloadData(from: smallURL)` に `await` は（ `try` も）必要なく、関数を呼び出すと結果を待たずに即時 `(2)` に進みます。
+`async let smallIcon = ...` のように `async let` で定数宣言を行い、右辺で `async` 関数を呼び出すことを `async let` Binding と呼びます `(1)`。このとき、 `downloadData` の呼び出しに `await` を付ける必要はなく（ `try` も必要ありません）、関数を呼び出すと結果を待たずに即時 `(2)` に進みます。
 
-`(2)` も同様で、 `downloadData(from: largeURL)` の関数呼び出し後、結果を待たずに即時 `(3)` に進みます。
+`(2)` も同様で、 `downloadData(from: largeURL)` の後、結果を待たずに即時 `(3)` に進みます。
 
-そして、 `async let` で宣言された定数を `(3)` で使おうとしたときに、初めて `await` が（ `try` も）必要になります。このようにして `await` を利用時まで遅らせることで、並行に関数を実行させることができます。
+そして、 `async let` で宣言された定数を `(3)` で使おうとしたときに、初めて `await` （と `try` ）が必要になります。このようにして、利用時まで `await` を遅らせることで、並行に関数を実行することができます。
 
-`async let` にはもう一つ特筆すべき特徴があります。それは、 `async let` で宣言された定数は、そのスコープを抜ける前に必ず `await` されなければならないということです。 `async let` のまま `return` するなど、スコープの外に持ち出すことはできません。これによって、 `async let` で開始された非同期処理は、必ずその呼び出し元の `async` 関数よりも先に完了することが保証されています。このように非同期関数のライフタイムがスコープで構造化されていることが、 **Structured Concurrency** という名前の由来です。
+`async let` にはもう一つ特筆すべき特徴があります。それは、 `async let` で宣言された定数は、そのスコープを抜ける前に必ず `await` されなければならないということです。 `async let` のまま `return` するなど、スコープの外に持ち出すことはできません。これによって、 `async let` で開始された非同期処理は、必ずその呼び出し元の `async` 関数よりも先に完了することが保証されています。このように非同期関数のライフタイムがスコープで構造化されていることが、 **Structured Concurrency** という名前の意味するところです。
 
-なお、 `async let` で宣言された定数をスコープ内で `await` しなかった場合、スコープの抜ける前に自動的に `await` されます。
+:::message
+`async let` で宣言された定数をスコープ内で `await` しなかった場合、スコープの抜ける前に自動的に `await` されます。
+:::
 
 Case 7 ですべての `async` 関数は Task の上で実行されると述べましたが、一つの Task は同時に一つの処理しか実行できません。 `async let` で呼び出される `async` 関数は並行に実行される必要があるため、同じ Task 上では実行することができません。このとき、元の Task から派生した Child Task が作られます。
 
-構造化によって Child Task は必ず親の Task より先に終わることが保証されています（ `async let` で宣言された定数は必ずスコープを抜ける前に `await` されるため）。 Child Task が親の Task とは独立に生き続けることはありません。この親子関係は木構造で表すことができます。
+`async let` で宣言された定数はそのスコープで必ず `await` されるという構造化によって、 Child Task は親の Task より先に終了することが保証されています。 Child Task が親の Task と独立に生き続けることはありません。この親子関係は木構造で表すことができます。
 
 ![](/images/swift-concurrency-cheatsheet/task-tree.png)
 
-Child Task がさらに `async let` を用いるなどした場合、上図のように孫 Task が作られることになります。この場合でも構造化は生きており、必ず Task Tree の末端（葉）から順に終了することが保証されます。
+Child Task の中でさらに `async let` が用いられるなどした場合、上図のように孫 Task が作られることになります。この場合でも構造化は生きており、必ず Task Tree の末端（葉）から順に終了することが保証されます。
 
 :::message
-Structured Programming は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 GOTO を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによって、コードの構造化によってそのような状況が改善されました。
+Structured Programming は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 goto を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによってコードが構造化され、そのような状況が改善されました。
 
 たとえば、次のコードでは `for` 文の中に `if` 文がありますが、この `if` 文の分岐が `for` 文のスコープを越えて生き残ることはできません。
 
@@ -957,7 +979,7 @@ Task がキャンセルされると、 `withTaskCancellationHandler` の `onCanc
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-# 3️⃣ `actor`
+# Actor
 
 ## 💼 Case 14: 共有された状態の変更
 
@@ -1499,6 +1521,12 @@ struct User: Sendable {
     ...
 }
 ```
+
+:::message
+`public` でない値型の場合、暗黙的に `Sendable` に適合します。そのため、上記の例では明示的に `Sendable` に適合させる必要はありません。
+
+本記事のコードは冗長な記述にならないように `public` を省略しています。通常、 `User` のような Entity は `public` で宣言される（アプリ本体とは別モジュールで宣言されることが多い）と思います。そのような場合には上記のように `Sendable` に適合させることが必要です。
+:::
 
 しかし、どんな型でも `Sendable` に適合できるわけではありません。たとえば、 `var` プロパティを持つクラスは `Sendable` に適合することができません。
 
