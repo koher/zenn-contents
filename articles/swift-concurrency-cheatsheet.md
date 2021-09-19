@@ -222,6 +222,11 @@ let data = try await downloadData(from: url)
 `Future<Result<Foo>>` を剥がして `Foo` を取り出すときには、まず `Future` を剥がしてから `Result` を剥がさなければなりません。そのため、先に `await` するために `try (await foo)` である必要があり、 `try await` の順となります。
 :::
 
+**参考文献**
+
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
+
 ## 💼 Case 4: 非同期関数の実装（エラーハンドリングがある場合）
 
 ### Before
@@ -266,6 +271,11 @@ Before と比べてずいぶんとすっきりしています。見比べると�
 これは、 `downloadData` や `JSONDecoder.decode` の `try` を、 `fetchUser` の `throws` で受けているためです。わざわざ `catch` して `throw` しなおさなくても、 `fetchUser` には `throws` が付与されているのでそのままエラーを投げることができます。そのため、エラーを `catch` して completion ハンドラーにリレーしている Before と比べてコードが簡潔になっています。
 
 Swift には Swift 2.0 の頃から、言語の提供するエラーハンドリング機構として `throws` / `try` がありました。しかし、エラーが発生し得ることの多い非同期処理では、コールバック関数を挟むため `throws` / `try` を上手く活用することができませんでした（関数に `throws` を付与してハンドリングさせることができず、コールバック関数に `Result` を渡すことでエラーを扱っていました）。 `async` / `await` は上記の例のように `trhows` / `try` と相性がよく、 `async` / `await` が導入されたことで `throws` / `try` もより活用しやすくなります。
+
+**参考文献**
+
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
 ## 💼 Case 5: 非同期関数の連結
 
@@ -341,6 +351,11 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 
 つまり `async` / `await` を使うと、コードが簡潔になるだけでなく、安全にもなるということです（さらに言えば、パフォーマンスも向上します）。
 
+**参考文献**
+
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
+
 ## 💼 Case 6: コールバックから `async` への変換
 
 :::message
@@ -401,6 +416,12 @@ func downloadData(from url: URL) async throws -> Data {
 
 また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。これらの関数を利用した場合、 `continuation` がチェックを行わない分だけわずかにパフォーマンスが向上します。その代わり、 `withChecked(Throwing)Continuation` が行っていたチェック（複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーで知らせる）が行われません。個人的には、一般的なアプリケーションでは `withChecked(Throwing)Continuation` が適切なケースが多いのではないかと思います。
 :::
+
+**参考文献**
+
+- [SE-0300: Continuations for interfacing async tasks with synchronous code](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md)
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
 # Structured Concurrency
 
@@ -485,6 +506,13 @@ extension UserViewController {
 
 なぜ `self` を暗黙的に strong キャプチャしても問題ないのでしょうか。その理由は、 `Task` のイニシャライザに渡されるクロージャはリファレンスサイクルを作らないからです。このクロージャは実行が完了すれば解放されるため、ここでキャプチャされた `self` がリファレンスサイクルを作り、メモリリークにつながる恐れはありません。そのような理由で Implicit `self` が採用されています。
 :::
+
+**参考文献**
+
+- [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
+- [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
+- [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
+- [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
 ## 💼 Case 8: （欠番）
 
@@ -627,13 +655,13 @@ for value in values {
 
 ## 💼 Case 10: 並行処理（可変個数の場合）
 
-次は可変個数の並行処理を考えます。 `async let` Binding を使えば固定個数の並行処理は簡単に記述できましたが、可変個数の場合は `async let` Binding が使えません。
+次は可変個数の並行処理を考えます。 `async let` Binding を使えば固定個数の並行処理は簡単に記述できました。しかし、可変個数の場合は `async let` Binding が使えません。
 
 ここでは例として、 N 人のユーザーのアイコンをダウンロードする関数を考えます。ユーザー ID の `Array` を渡して、それらのユーザーのアイコンを並行してダウンロードします。
 
 ### Before
 
-Before については Case 9 と大差ありません。次のコードでは、 Case 9 同様 `DispatchGroup` を使って、並行に実行された非同期処理の待ち合わせをしています。
+Before については Case 9 と大差ありません。 Case 9 同様に `DispatchGroup` を使って、並行に実行された非同期処理の待ち合わせをしています。
 
 ```swift
 func fetchUserIcons(for ids: [User.ID], completion: @escaping (Result<[User.ID: Data], Error>) -> Void) {
@@ -662,7 +690,7 @@ func fetchUserIcons(for ids: [User.ID], completion: @escaping (Result<[User.ID: 
 
 ### After
 
-この例では `ids` が `Array` で渡されます。そのため、これを `async let` に書き下すことができません。
+この例では `ids` が `Array` で渡されます。 Case 9 のように個数が二つと決定されているような場合は `async let` に書き下すことができますが、 `ids` の要素数は実行時に決定されるため、一つずつ `async let` に書き下すことができません。
 
 `ids` を `for` 文で一つずつ取り出して `async let` を書くわけにもいきません。なぜなら、 `async let` は宣言されたスコープ内で `await` する必要があるため、すべての ID について並行に処理を実行して、後でまとめて `await` することができないからです。
 
@@ -689,11 +717,11 @@ func fetchUserIcons(for ids: [User.ID]) async throws -> [User.ID: Data] {
 
 まず、 `(1)` でクロージャ式の引数として `group` を受け取ります。
 
-`(2)` で `addTask` メソッドを使って、 `group` に Child Task を追加します。 `async let` の場合と同様に、それらの Child Task は並行に実行されます。 `addTask` のクロージャの中の `(3)` で `await` をしていますが、 `addTask` 自体は `await` しておらず、このクロージャは並行して実行されるため、 `ids` のループは個々の `id` に対するダウンロードの結果を待たずにイテレートすることができます。
+`(2)` で `addTask` メソッドを使って、 `group` に Child Task を追加します。 `async let` の場合と同様に、それらの Child Task は並行に実行されます。 `addTask` のクロージャの中で `await` していますが `(3)` 、 `addTask` 自体は `await` しておらず、このクロージャは並行して実行されます。そのため、 `ids` のループは個々の `id` に対するダウンロードの結果を待たずにイテレートすることができます。
 
-そのように並行で Child Task を実行した後で、 `group` から Child Task の結果を取り出すときに `await` する必要があります（ `(4)` ）。これは、 `async let` で宣言された定数を利用するときに `await` が必要なのとよく似ています。このような 2 段階の処理を行うことで、並行に処理を実行し、後で待ち合わせて結果を取得することが可能となっています。
+このように並行して Child Task を実行した後で、 `group` から Child Task の結果を取り出すときに `await` して待ち合わせます `(4)` 。これは、 `async let` で宣言された定数を利用するときに `await` が必要なのとよく似ています。このような 2 段階に分けて処理を行うことで、並行な実行と待ち合わせを実現しています。
 
-`(4)` についてもう一つ注目すべきは、 `for` 文で `group` から結果を取り出すときに `for try await` と書かれていることです。 Swift Concurrency で追加された `AsyncSequence` に対して `for` 文を使うときには、 `for await` または `for try await` で値を受け取る必要があります。 `for await` （ `for try await` ）を使うことで、非同期的に得られる値を待ちながら順番に取り出すことができます。
+`(4)` についてもう一つ注目すべきは、 `for` 文で `group` から結果を取り出すときに `for try await` と書かれていることです。これまで `for` 文でイテレートするには `Sequence` プロコトルに適合することが必要でしたが、 Swift Concurrency で新しく `AsyncSequence` が追加されました。 `AsyncSequence` に対して `for` 文を使うときには、 `for await` または `for try await` で値を受け取る必要があります。 `for await` （ `for try await` ）を使うことで、非同期的に得られる値を待ちながら順番に取り出すことができます。
 
 最後に、 `(5)` で `return` した結果が `(1)` の `withThrowingTaskGroup` の結果として返されます。
 
@@ -712,7 +740,7 @@ Case 9 のように固定個数の処理を並行で実行したい場合にも�
 
 ## 💼 Case 11: 非同期処理のキャンセル（非同期 API の利用側）
 
-非同期処理のキャンセルを正しく行うのは大変です。特に、非同期処理が別の非同期処理に依存している場合には、一連の非同期処理をすべて正しくキャンセルするには注意深くコードを書く必要があります。 Structured Concurrency は非同期処理のキャンセルを簡単にしてくれます。
+非同期処理のキャンセルを正しく行うのは大変です。特に、非同期処理が別の非同期処理に依存している場合には、一連の非同期処理をすべて正しくキャンセルする必要があります。 Structured Concurrency は非同期処理のキャンセルを簡単にしてくれます。
 
 ここでは、 Case 4 などで見てきた `downloadData` 関数をキャンセルする例を考えてみます。
 
@@ -728,7 +756,7 @@ func downloadData(
 ) -> DownloadCanceller
 ```
 
-上記のように、戻り値で canceller が返され、それを使ってキャンセルを実行します。また、キャンセルされたことをハンドリングできるように、 completion ハンドラーとは別にキャンセルをハンドリングするためのコールバック関数（上記の例では `cancellation` ）を渡す仕様になっていることもあるでしょう。
+上記のように、戻り値で canceller が返され、それを使ってキャンセルを実行します。また、キャンセルされたことをハンドリングできるように、（ completion ハンドラーとは別に）キャンセルをハンドリングするためのコールバック関数（上記の例では `cancellation` ）を渡せる仕様になっていることもあるでしょう。
 
 ダウンロードボタンを押すとダウンロードを開始し、キャンセルボタンを押すとダウンロードをキャンセルする例を考えてみます。次のように `@IBAction` のメソッドの中で `downloadData` を呼び出し、 `canceller` を `ViewController` のプロパティに保存しておきます。
 
@@ -764,9 +792,9 @@ extension ViewController {
 
 ### After
 
-`async` 関数の場合、同じ手は使えません。戻り値は結果を返すために使われるからです。また、仮に戻り値で `(Data, DownloadCanceller)` のように結果と canceller をペアで返したとしても、それが得られるのは `await` で suspend してから resume された後です。 canceller を取得できるのは非同期処理が完了した後ということになり、意味がありません。
+`async` 関数の場合、同じ方法は使えません。戻り値は結果を返すために使われるからです。戻り値で無理やり `(Data, DownloadCanceller)` のようにして、結果と canceller をペアで返すことはできますが、それが得られるのは `await` で suspend してから resume された後です。 canceller を取得できるのは非同期処理が完了した後ということになり、戻り値で canceller を返すことには意味がありません。
 
-`async` 関数をキャンセルするには `Task` を利用します。 Case 7 では `Task` のイニシャライザを使って非同期処理を開始するだけで、イニシャライズされた `Task` インスタンスは使いませんでした。その `Task` インスタンスには `cancel` メソッドが用意されており、 `cancel` メソッドを呼ぶことで Task をキャンセルすることができます。
+`async` 関数をキャンセルするには `Task` を利用します。 Case 7 では `Task` のイニシャライザを使って非同期処理を開始しましたが、イニシャライズされた `Task` インスタンス自体は使いませんでした。 `Task` インスタンスには `cancel` メソッドが用意されており、 `cancel` メソッドを呼ぶことで Task をキャンセルすることができます。
 
 Before と同じように `task` を `ViewController` のプロパティに保存し、キャンセルボタンが押されたら `task` の `cancel` メソッドを使ってキャンセルします。
 
@@ -800,9 +828,9 @@ extension ViewController {
 
 `cancel` メソッドが呼ばれた場合、 `async` 関数はエラーを `throw` することで処理を中断します。そのため、キャンセルのハンドリングは `catch` によって行います。
 
-キャンセルでもエラーが発生した場合でも、処理を中断することに違いはありません。それらのハンドリングに区別が要らない場合は単に `catch` すればいいですが、ときにはキャンセルとエラーを区別したい場合もあります。
+キャンセルでもエラーが発生した場合でも、処理を中断することに違いはありません。キャンセルかエラーかの区別が必要ない場合は単に `catch` すれば良いですが、ときにはキャンセルとエラーを区別したい場合もあります。
 
-たとえば今回のケースでは、エラーが起こったらアラートを表示して、ユーザーにそれを知らせるのが親切でしょう。しかし、キャンセルボタンが押された場合にはユーザーの意思によるものなので、アラートを表示する必要はありません。このような場合、キャンセルかどうかを区別して分岐する必要があります。このような分岐は `Task.isCancelled` を調べることで実現できます。
+たとえば今回のケースでは、エラーが起こったらアラートを表示して、ユーザーにそれを知らせるのが親切でしょう。しかし、キャンセルボタンが押された場合にはユーザーの意思によるものなので、アラートを表示する必要はありません。このような場合、キャンセルかどうかを区別して分岐する必要があります。そのような分岐は、上記のコードのように `Task.isCancelled` を調べることで実現できます。
 
 :::message
 慣例上、 Task がキャンセルされた場合には `CancellationError` が `throw` されることになっています。そのため、次のようなコードでもキャンセルをハンドリングできるように思えます。
@@ -817,7 +845,7 @@ do {
 }
 ```
 
-しかし、キャンセル時に本当に `CancellationError` が `throw` されるかは実装依存であり、上記の方法は確実ではありません。まとめて `catch` してから `Task.isCancelled` で分岐することをおすすめします。
+しかし、キャンセル時に本当に `CancellationError` が `throw` されるかは実装依存であり、上記の方法は確実ではありません。 `catch` 後に `Task.isCancelled` で分岐することをおすすめします。
 :::
 
 **参考文献**
