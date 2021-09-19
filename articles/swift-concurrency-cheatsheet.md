@@ -8,7 +8,7 @@ published: true
 
 Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が追加されました。これによって、 Swift で**非同期処理・並行処理のコードをより簡潔かつ安全に**書くことができるようになります。
 
-しかし、 Swift Concurrency は [Structured Concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md) や [Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md) など、 iOS / macOS アプリ開発者にとって馴染みの薄い概念を含みます。具体例を通して効率よく Swift Concurrency を習得できるように、本記事は、 Swift Concurrency 導入以前（ **Before** ）と導入後（ **After** ）で何がどのように変わるのか、具体的なコードの形で紹介します。
+しかし、 Swift Concurrency は [Structured Concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md) や [Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md) など、多くの人にとって馴染みが薄いだろうと思われる概念を含みます。具体例を通して効率よく Swift Concurrency を習得できるように、本記事は、 Swift Concurrency 導入以前（ **Before** ）と導入後（ **After** ）で何がどのように変わるのか、 iOS アプリのコードを題材に紹介します。
 
 なお、 Swift Concurrency 関連の機能は次の三つに大別できるため、本記事の Before & After の例もそのように分類します。
 
@@ -17,7 +17,7 @@ Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が�
 - Actor
 
 :::message
-本記事の説明は前から読んで理解できるように書かれていますが、チートシートとして、やりたいことベースでコードの書き方を調べたい場合は目次をご活用下さい。
+本記事の説明は前から読んで理解できるように書かれています。ただ、一度概念を理解した後はチートシートとして、やりたいことベースでコードの書き方を調べることもできます。そのような場合には目次をご活用下さい。
 :::
 
 # `async` / `await`
@@ -387,7 +387,7 @@ func downloadData(from url: URL) async throws -> Data {
 :::message
 もし `throws` が必要ない場合には、代わりに `withCheckedContinuation` 関数を利用します。
 
-また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。　`withChecked(Throwing)Continuation` では、複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーを引き起こしますが、 `withUnsafe(Throwing)Continuation` ではそのようなケースで未定義動作となります（チェックしない分、わずかにパフォーマンスが向上します）。
+また、 `withUnsafeContinuation` ・ `withUnsafeThrowingContinuation` という関数もあります。 `withChecked(Throwing)Continuation` では、複数回 `resume` したり、 `resume` することなく `continuation` が破棄された場合に実行時エラーを引き起こしますが、 `withUnsafe(Throwing)Continuation` ではそのようなケースで未定義動作となります（チェックしない分、わずかにパフォーマンスが向上します）。
 :::
 
 # Structured Concurrency
@@ -1018,7 +1018,7 @@ final class Counter {
 }
 ```
 
-`Counter` に `queue` を持たせ `increment` メソッドを丸ごと `queue` 上で実行することで、オペレーションが同時に実行されることを防いでいます。
+`Counter` に `queue` を持たせ `increment` メソッドのオペレーションを丸ごと `queue` に入れて実行することで、オペレーションが同時に実行されることを防いでいます。
 
 ただし、オペレーションを一度 `queue` に入れてから実行するということは、結果は非同期的に得られることになります。そのため、 completion ハンドラーを用いて結果を返します。
 
@@ -1066,6 +1066,10 @@ Task.detached {
 
 この `increment` メソッドのように `actor` のキューによってデータ競合から守られていることを **actor-isolated** であると言います。
 
+:::message
+`actor` が内部に保持しているキューの実装は `DispatchQueue` ではありません。 serial executor というより軽量な実装が用いられています。
+:::
+
 **参考文献**
 
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
@@ -1100,9 +1104,9 @@ final class Counter {
 ```
 :::
 
-一つの `Counter` に対して同時に `incrementTwice` メソッドを呼び出した場合、期待する結果は片方が 2 を、もう片方が 4 を返すことです。しかし、 `increment` メソッドのオペレーションは `queue` 上で実行されますが、 2 回のインクリメントはばらばらに `queue` に追加されます。そのため、 2 回インクリメントする途中の状態が外部から観測される可能性があります。前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+一つの `Counter` に対して同時に `incrementTwice` メソッドを呼び出した場合、期待する結果は片方が 2 を、もう片方が 4 を返すことです。しかし、 `increment` メソッドのオペレーションは `queue` に入れられて実行されるものの、 2 回のインクリメントはばらばらに `queue` に追加されます。そのため、 2 回インクリメントする途中の状態が外部から観測される可能性があります。前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
 
-これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。そのために、同期的なインクリメントを行う `_increment` メソッドを実装し、**非**同期的な `increment` メソッドは `queue` 上で `_increment` を呼び出す形にします。また、 `incrementTwice` は `queue` 上で同期的に `_increment` メソッドを 2 回呼び出すようにします。
+これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。そのためにここでは、同期的なインクリメントを行う `_increment` メソッドを実装し、**非**同期的な `increment` メソッドは `_increment` の呼び出しを `queue` に入れる形で実装します。また `incrementTwice` は同じく、同期的に `_increment` メソッドを 2 回呼び出すオペレーションを `queue` に入れる形で実装します。
 
 ```swift
 final class Counter {
@@ -1131,11 +1135,11 @@ final class Counter {
 }
 ```
 
-このようにすれば、 3 のような途中の状態が外部から観測されるのを防ぐことができます。 `_increment` メソッドは `private` になっていることに注意して下さい。 `Counter` には外部からは `queue` を通してアクセスしなければならないため、 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
+このようにすれば、 `incrementTwice` の途中状態が外部から観測されるのを防ぐことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることはありません。このため、 `increment` や `incrementTwice` で外部から `queue` を介して `count` を観測する限り、途中状態が観測されることはありません。
 
-`increment` メソッドや `incrementTwice` メソッドは `_increment` メソッドを呼び出していますが、一度 `queue` に乗せてしまえば同時に実行されることはないので、安心して `_increment` メソッドを呼び出すことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることがないので、 3 のような途中状態が観測されることはありません。
+`_increment` メソッドは `private` になっていることに注意して下さい。 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
 
-このように、外部からは非同期に、内部からは一度 `queue` に乗ってしまえば同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし極論すれば、すべてのメソッドに同期版と非同期版を用意し、非同期版は `queue` 上で同期版を呼び出すような二重化が必要ということです。
+このように、外部からは非同期に、内部（一度 `queue` に乗せてしまって）からは同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし、内部用と外部用に、同期版・非同期版のメソッドを用意する二重化が必要になります。これは定型的な処理で、それらを扱うコードはボイラープレートとなります。
 
 ### After
 
@@ -1158,7 +1162,7 @@ actor Counter {
 }
 ```
 
-`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではすでにオペレーションがキュー上で実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
+`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではすでにオペレーションがキューに入れられて実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
 
 これは、 Before で実現したかったこと（外部からは非同期（ `async` ）に、内部からは同期に）を自動的に実現しているということです。コードの二重化なしにこれを実現できるのが、 `actor` の最も重要な機能です。
 
@@ -1330,7 +1334,7 @@ final class UserViewController: UIViewController {
 }
 ```
 
-また、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
+また、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるかもしれないので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1617,6 +1621,115 @@ actor Foo {
 }
 ```
 
+**参考文献**
+
 - [SE-0302: `Sendable` and `@Sendable` closures](https://github.com/apple/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md)
+- [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+## 💼 Case 20: 共有された状態の変更（メインスレッド上での処理）
+
+View に変更を加える場合、 iOS アプリ開発ではメインスレッド上で処理を実行する必要があります。そのため、 ViewModel の状態変更がすべてメインスレッドで行われると便利です。
+
+Case 18 では ViewModel が個別のキューを保持・利用していました。これをメインキューにできれば、状態変更はすべてメインスレッド上で実行されることになります。
+
+### Before
+
+Case 18 の `UserViewState` の `queue` を、 `DispatchQueue.main` に変更するだけで目的は達成できます。
+
+```swift
+final class UserViewState: ObservableObject {
+    private let queue: DispatchQueue = .main
+    ...
+}
+```
+
+### After
+
+`actor` の場合はどうすれば良いでしょうか。 `actor` のキューはインスタンスごとに自動的に作られるため、メインキューに差し替えることができません。
+
+そのような場合に利用できるのが [Global Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md) です。 Global Actor は名前の通り Global に一つのキューを持つ Actor です。複数のクラスを同じキューで守ったり（ isolate したり）、型を丸ごとではなく個別のメソッド単位で isolate することが可能です。
+
+標準ライブラリが提供する、最も代表的な Global Actor が `MainActor` です。 `MainActor` はキューとして `DispatchQueue.main` を利用します。
+
+:::message
+正確には、 Case 14 でも述べたように、 Actor が保持するのは `DispatchQueue` ではなく serial executor です。 `MainActor` は `DispatchQueue.main` をラップした custom executor を利用します。
+:::
+
+`UserViewState` を `MainActor` で丸ごと isolate するためには、次のように書きます。
+
+```swift
+@MainActor
+final class UserViewState: ObservableObject {
+    ...
+}
+```
+
+Case 18 では `actor` だったところを `final class` に変更し、 `@MainActor` を付与しました。これによって、 `UserViewState` のすべてのメンバーが `MainActor` によって isolate されます。
+
+さて、変更をメインスレッド上で行いたいクラスの代表格として、 `UIViewController` が挙げられます。 `UIViewController` に `@MainActor` が付与されていたら便利そうだと思いませんか？ `UIViewController` の API リファレンスを見てみると、なんと `UIViewController` に `@MainActor` が付与される変更が加えられています。
+
+```swift
+@MainActor class UIViewController : UIResponder
+```
+
+これによって、（ `UIViweController` を継承した） `UserViewController` と `UserViewState` は同じ Actor の内部ということになります。 Case 15 で見たように、 Actor 内であればメソッドを同期的に利用することができました。そうすると、 `loadUser` メソッドの呼び出しは `await` 不要ということになります。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        state.loadUser()
+    }
+}
+```
+
+`state` への変更を View に反映する箇所も同様です。
+
+```swift
+final class UserViewController: UIViewController {
+    private let state: UserViewState
+    ...
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        ...
+        state
+            .objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [self] _ in
+                // state を View に反映する処理
+                nameLabel.text = state.user?.name
+            }
+            .store(in: &cancellables)
+    }
+    ...
+}
+```
+
+`await` が不要になったため、 `Task` のイニシャライザに渡す必要もなくなり、コードがすっきりしました。
+
+UIKit ではなく SwiftUI を使う場合も同様です。 `@StateObject` はメインスレッドで更新されなければならないため、上記の `UserViewState` のように、 `ObservableObject` に `@MainActor` を付与する必要があります。上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
+
+```swift
+struct UserView: View {
+    @StateObject private var state: UserViewState
+    ...
+    var body: some View {
+        VStack {
+            if let user = state.user {
+                Text(user.name)
+            }
+            ...
+        }
+        .onAppear { state.loadUser() }
+    }
+}
+```
+
+**参考文献**
+
+- [SE-0316: Global actors](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md)
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
