@@ -483,7 +483,7 @@ extension UserViewController {
 }
 ```
 
-わかりづらいですが、この `Task { }` は `Task` のイニシャライザの呼び出しです。 `{ }` は Trailing Closure なので、 `Task({ })` と書いているのと同じです。つまり、 `Task` のイニシャライザに、引数としてクロージャ式を渡している形です。
+わかりづらいですが、この `Task { }` は `Task` のイニシャライザの呼び出しです。 `{ }` は Trailing Closure なので、 `Task(operation: { })` と書いているのと同じです。つまり、 `Task` のイニシャライザに、引数としてクロージャ式を渡している形です。
 
 この `Task` のイニシャライザに渡すクロージャの型は `@escaping () async -> Success` です。これに `async` が付与されているので、 `{ }` の中で `async` 関数を呼び出すことができます。そのため、 `fetchUser` も問題なく呼び出せます。
 
