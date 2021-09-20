@@ -530,7 +530,7 @@ iOSDC Japan 2021 の発表とそろえるため、 Case 8 は欠番とします�
 |---|---|
 | ![](/images/swift-concurrency-cheatsheet/icon.png =60x) | ![](/images/swift-concurrency-cheatsheet/icon.png =180x) |
 
-## Before
+### Before
 
 （ Case 4 などで見てきた）コールバック版の `downloadData` 関数を使って、 `fetchUserIcons` 関数を実装します。
 
@@ -571,7 +571,7 @@ func fetchUserIcons(for id: User.ID, completion:
 }
 ```
 
-## After
+### After
 
 同じく、（ Case 4 の） `async` 版の `downloadData` 関数を使って `fetchUserIcons` 関数を実装します。
 
