@@ -26,7 +26,7 @@ Swift 5.5 で Swift に Concurrency （並行処理）関連の言語機能が�
 
 `async` / `await` は Swift Concurrency の一部ですが、 `async` / `await` 自体が並行処理を扱うわけではありません。 `async` / `await` は非同期処理に関する機能です。
 
-## 💼 Case 1: 非同期関数の利用＜エラーハンドリングがない場合＞（ `async` / `await` ）
+## 💼 Case 1 (`async` / `await`): 非同期関数の利用（エラーハンドリングがない場合）
 
 非同期処理はエラーハンドリングを必要とする場合が多いですが、まずは理解しやすいようにエラーハンドリングを伴わない例を考えてみます。
 
@@ -99,7 +99,7 @@ downloadData(from: url) { data in
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 2: 非同期関数の実装＜エラーハンドリングがない場合＞（ `async` / `await` ）
+## 💼 Case 2 (`async` / `await`): 非同期関数の実装（エラーハンドリングがない場合）
 
 Case 1 では非同期関数を利用するコードを扱いましたが、次は自分で非同期関数を実装する場合を考えます。
 
@@ -145,7 +145,7 @@ completion ハンドラーを使わずに戻り値として結果を返せば良
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 3: 非同期関数の利用＜エラーハンドリングがある場合＞（ `async throws` / `try await` ）
+## 💼 Case 3 (`async throws` / `try await`): 非同期関数の利用（エラーハンドリングがある場合）
 
 これまでの例ではエラーハンドリングを無視してきましたが、多くの非同期処理はエラーを引き起こす可能性があります。エラーハンドリングと非同期処理がどのように両立されてきたかを見てみます。
 
@@ -227,7 +227,7 @@ let data = try await downloadData(from: url)
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 4: 非同期関数の実装＜エラーハンドリングがある場合＞（ `async throws` / `try await` ）
+## 💼 Case 4 (`async throws` / `try await`): 非同期関数の実装（エラーハンドリングがある場合）
 
 ### Before
 
@@ -277,7 +277,7 @@ Swift には Swift 2.0 の頃から、言語の提供するエラーハンドリ
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 5: 非同期関数の連結（ `async throws` / `try await` ）
+## 💼 Case 5 (`async throws` / `try await`): 非同期関数の連結
 
 次は二つの非同期処理を連結する場合についてです。
 
@@ -356,7 +356,7 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 6: コールバックから `async` への変換（ `CheckedContinuation`, `withChecked(Throwing)Continuation` ）
+## 💼 Case 6 (`CheckedContinuation`, `withChecked(Throwing)Continuation`): コールバックから `async` への変換
 
 :::message
 この Case には Before がありません。
@@ -427,7 +427,7 @@ func downloadData(from url: URL) async throws -> Data {
 
 ここからは Structured Concurrency に分類される例を紹介します。
 
-## 💼 Case 7: 非同期処理の開始（ `Task.init` ）
+## 💼 Case 7 (`Task.init`): 非同期処理の開始
 
 同期関数から非同期関数を呼び出すケースを考えます。
 
@@ -514,13 +514,13 @@ extension UserViewController {
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 8: ＜欠番＞
+## 💼 Case 8: （欠番）
 
 :::message
 iOSDC Japan 2021 の発表とそろえるため、 Case 8 は欠番とします。
 :::
 
-## 💼 Case 9: 並行処理＜固定個数の場合＞（ `async let` ）
+## 💼 Case 9 (`async let`): 並行処理（固定個数の場合）
 
 ようやく並行処理です。並行処理は、複数の処理を同時に実行するための仕組みです。
 
@@ -653,7 +653,7 @@ for value in values {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 10: 並行処理＜可変個数の場合＞（ `(Throwing)TaskGroup`, `with(Throwing)TaskGroup` ）
+## 💼 Case 10 (`(Throwing)TaskGroup`, `with(Throwing)TaskGroup`): 並行処理（可変個数の場合）
 
 次は可変個数の並行処理を考えます。 `async let` Binding を使えば固定個数の並行処理は簡単に記述できました。しかし、可変個数の場合は `async let` Binding が使えません。
 
@@ -738,7 +738,7 @@ Case 9 のように固定個数の処理を並行で実行したい場合にも�
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 - [Meet AsyncSequence (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10058/)
 
-## 💼 Case 11: 非同期処理のキャンセル＜非同期 API の利用側＞（ `task.cancel` ）
+## 💼 Case 11 (`task.cancel`): 非同期処理のキャンセル（非同期 API の利用側）
 
 非同期処理のキャンセルを正しく行うのは大変です。特に、非同期処理が別の非同期処理に依存している場合には、一連の非同期処理をすべて正しくキャンセルする必要があります。 Structured Concurrency は非同期処理のキャンセルを簡単にしてくれます。
 
@@ -853,7 +853,7 @@ do {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 12: 非同期処理のキャンセル＜非同期 API の実装側①＞（ `Task.checkCancellation()`, `Task.isCancelled` ）
+## 💼 Case 12 (`Task.checkCancellation()`, `Task.isCancelled`): 非同期処理のキャンセル（非同期 API の実装側①）
 
 :::message
 この Case には Before がありません。
@@ -922,7 +922,7 @@ func countPedestrians(in video: AVAsset) async throws -> Int {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 13: 非同期処理のキャンセル＜非同期 API の実装側②＞（ `withTaskCancellationHandler` ）
+## 💼 Case 13 (`withTaskCancellationHandler`): 非同期処理のキャンセル（非同期 API の実装側②）
 
 :::message
 この Case には Before がありません。
@@ -1009,7 +1009,7 @@ Task がキャンセルされると、 `withTaskCancellationHandler` の `onCanc
 
 # Actor
 
-## 💼 Case 14: 共有された状態の変更（ `actor` ）
+## 💼 Case 14 (`actor`): 共有された状態の変更
 
 並行処理において、共有された状態を同時に読み書きするとデータ競合が発生します。
 
@@ -1125,7 +1125,7 @@ Task.detached {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 15: 共有された状態の変更＜インスタンス内でのメソッド呼び出し＞（ `actor` ）
+## 💼 Case 15 (`actor`): 共有された状態の変更（インスタンス内でのメソッド呼び出し）
 
 Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンス内部から `Counter` のメソッドを呼ぶケースを考えてみます。
 
@@ -1221,7 +1221,7 @@ actor Counter {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 16: 共有された状態の変更（ getter ）（ `actor`, `get async` ）
+## 💼 Case 16 (`actor`, `get async`): 共有された状態の変更（ getter ）
 
 Case 14, 15 では `count` を外部からは隠蔽していましたが、インクリメントすることなくカウントを取得したいことも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
 
@@ -1288,7 +1288,7 @@ Effectful Read-only Properties は名前の通り read-only です。今のと�
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 17: 共有された状態の変更＜複数インスタンスの連携＞（ `actor` ）
+## 💼 Case 17 (`actor`): 共有された状態の変更（複数インスタンスの連携）
 
 :::message
 この Case には Before がありません。
@@ -1332,7 +1332,7 @@ actor Counter {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 18: 共有された状態の変更＜非同期処理結果の反映＞（ `actor`, `ObservableObject` ）
+## 💼 Case 18 (`actor`, `ObservableObject`): 共有された状態の変更（非同期処理結果の反映）
 
 カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないように適切に守る必要があります。
 
@@ -1478,7 +1478,7 @@ final class UserViewController: UIViewController {
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 19: Actor Boundary を越える（ `Sendable`, `@Sendable`, `@unchecked` ）
+## 💼 Case 19 (`Sendable`, `@Sendable`, `@unchecked`): Actor Boundary を越える
 
 :::message
 この Case には Before がありません。
@@ -1683,7 +1683,7 @@ actor Foo {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 20: 共有された状態の変更＜メインスレッド上での処理＞（ `MainActor`, `@MainActor` ）
+## 💼 Case 20 (`MainActor`, `@MainActor`): 共有された状態の変更（メインスレッド上での処理）
 
 View に変更を加える場合、 iOS アプリ開発ではメインスレッド上で処理を実行する必要があります。そのため、 ViewModel の状態変更がすべてメインスレッドで行われると便利です。
 
