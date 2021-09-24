@@ -1139,13 +1139,13 @@ Task.detached {
 
 ## 💼 Case 15 (`actor`): 共有された状態の変更（インスタンス内でのメソッド呼び出し）
 
-Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンス内部から `Counter` のメソッドを呼ぶケースを考えてみます。
+Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンスの内部から `Counter` のメソッドを呼ぶケースを考えてみます。
 
-ここでは、 2 回カウンターをインクリメントする `incrementTwice` メソッドを考えます。すでに `increment` メソッドがあるので、これを使って `incrementTwice` メソッドを実装します。
+ここでは、（あまり現実的な例ではないですが） 2 回カウンターをインクリメントする `incrementTwice` メソッドを考えます。すでに `increment` メソッドがあるので、これを使って `incrementTwice` メソッドを実装します。
 
 ### Before
 
-`DispatchQueue` & コールバック関数による `Counter` の場合、単純に考えると次のように `incrementTwice` メソッドを実装してしまいます。しかし、これは競合状態を引き起こします。
+`DispatchQueue` & コールバック関数による `Counter` の場合、単純に考えると次のように `incrementTwice` メソッドを実装してしまいそうです。しかし、これは競合状態を引き起こします。
 
 :::details 競合状態を引き起こす実装
 ```swift
@@ -1166,9 +1166,13 @@ final class Counter {
 ```
 :::
 
-一つの `Counter` に対して同時に `incrementTwice` メソッドを呼び出した場合、期待する結果は片方が 2 を、もう片方が 4 を返すことです。しかし、 `increment` メソッドのオペレーションは `queue` に入れられて実行されるものの、 2 回のインクリメントはばらばらに `queue` に追加されます。そのため、 2 回インクリメントする途中の状態が外部から観測される可能性があります。前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+`incrementTwice` メソッドを 2 回同時に呼び出した場合、期待される結果は片方が 2 、もう片方が 4 を返すことです。しかし、上記のような実装の場合、そのような結果が得られるとは限りません。
 
-これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。そのためにここでは、同期的なインクリメントを行う `_increment` メソッドを実装し、**非**同期的な `increment` メソッドは `_increment` の呼び出しを `queue` に入れる形で実装します。また `incrementTwice` は同じく、同期的に `_increment` メソッドを 2 回呼び出すオペレーションを `queue` に入れる形で実装します。
+`increment` メソッドのオペレーションは `queue` で守られています。しかし、 2 回呼び出される `increment` メソッドのオペレーションはバラバラに `queue` に追加されます。そのため、 2 回のインクリメントは一度に同期的に実行されるわけではなく、 2 回に分けて実行されます。すると、 2 回のオペレーションの途中の状態が外部から観測されてしまう可能性があります。たとえば前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+
+これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。しかし、 `increment` メソッドは非同期なので、同期的に 2 回呼び出すことはできません。そこで、 `increment` メソッドとは別に、同期的なインクリメントを行う `_increment` メソッドを実装します。このとき、**非**同期的な `increment` メソッドは `_increment` の呼び出しを `queue` に入れる形で実装できます。
+
+`_increment` メソッドがあれば、 2 回のインクリメントを同期的に行うことが可能になります。 `incrementTwice` メソッドは、 `queue` に入れたオペレーションの上で、 `_increment` メソッドを 2 回同期的に呼び出します。
 
 ```swift
 final class Counter {
@@ -1197,11 +1201,11 @@ final class Counter {
 }
 ```
 
-このようにすれば、 `incrementTwice` の途中状態が外部から観測されるのを防ぐことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることはありません。このため、 `increment` や `incrementTwice` で外部から `queue` を介して `count` を観測する限り、途中状態が観測されることはありません。
+このようにすれば、 `incrementTwice` による 2 回のインクリメントの途中状態が外部から観測されるのを防ぐことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることはありません。そのため、（ `increment` や `incrementTwice` を用いて）外部から `queue` を介して `count` を観測する限り、途中状態が観測されることはありません。
 
-`_increment` メソッドは `private` になっていることに注意して下さい。 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
+`_increment` メソッドは `private` になっていることに注意して下さい。データ競合を防ぐためには、 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
 
-このように、外部からは非同期に、内部（一度 `queue` に乗せてしまって）からは同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし、内部用と外部用に、同期版・非同期版のメソッドを用意する二重化が必要になります。これは定型的な処理で、それらを扱うコードはボイラープレートとなります。
+このように、共有された状態をインスタンス外部からは非同期に、内部（一度 `queue` に乗せてしまって）からは同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし、適切にデータを保護するには内部用と外部用に、同期版・非同期版のメソッドを二重に提供することが求められます。それらは定型的な処理で、そのような処理を扱うコードはボイラープレートとなります。
 
 ### After
 
@@ -1224,7 +1228,7 @@ actor Counter {
 }
 ```
 
-`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではすでにオペレーションがキューに入れられて実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
+`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではオペレーションはすでにキューに保護された状態で実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
 
 これは、 Before で実現したかったこと（外部からは非同期（ `async` ）に、内部からは同期に）を自動的に実現しているということです。コードの二重化なしにこれを実現できるのが、 `actor` の最も重要な機能です。
 
@@ -1233,13 +1237,13 @@ actor Counter {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 16 (`actor`, `get async`): 共有された状態の変更（ getter ）
+## 💼 Case 16 (`actor`, `get async`): 共有された状態の変更（ getter ）
 
-Case 14, 15 では `count` を外部からは隠蔽していましたが、インクリメントすることなくカウントを取得したいことも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
+Case 14, 15 では `count` プロパティを外部から隠蔽していました。 Case 14, 15 の `Counter` では、カウントを観測するにはインクリメントが必須です。しかし、インクリメントすることなくカウントを取得したいケースも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
 
 ### Before
 
-`count` は `queue` を使って非同期的に結果を返さないといけないので、 `count` をコールバック関数で結果を返すメソッドにします。
+`queue` を介さずに `count` の値を返してしまうとデータ競合を引き起こす可能性があります。 `queue` を介して値を返すにはコールバック関数が必要なので、 `count` をプロパティではなくメソッドに変更します。
 
 ```swift
 final class Counter {
@@ -1265,7 +1269,7 @@ final class Counter {
 
 ### After
 
-`actor` を用いる場合、単に `count` を `private(set)` にして公開します。
+`actor` を用いる場合、単に `count` の `private` を外せば OK です（次のコードでは、 `set` は公開したくないので `private(set)` にしています）。
 
 ```swift
 actor Counter {
@@ -1280,7 +1284,7 @@ actor Counter {
 
 `actor` のメソッドに外部からアクセスする場合は `async` に見えましたが、プロパティである `count` はどのように見えるのでしょうか。
 
-Swift 5.5 で [Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md) が追加され、プロパティも `throws` や `async` になることができるようになりました。これを用いて、 `count` は外部からアクセスされた場合、 `async` なプロパティのように振る舞います。つまり、外部から `count` にアクセスするには `await` が必要になります。
+Swift 5.5 で [Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md) が追加され、プロパティにも `throws` や `async` を付与することが可能となりました。これを用いて、 `count` は外部からアクセスされた場合、 `async` なプロパティのように振る舞います。つまり、外部から `count` にアクセスするには `await` が必要になります。
 
 ```swift
 print(await counter.count)
@@ -1289,9 +1293,9 @@ print(await counter.count)
 :::message
 Effectful Read-only Properties は名前の通り read-only です。今のところ `set` を `async` にすることはできません。
 
-上記の例では `count` を `private(set)` にしましたが、これがなくても外部から `count` を変更することはできません。 `actor` に外部からアクセスするには `async` である必要がありますが、非同期的に `count` を `set` する方法がないためです。
+上記の例では `count` を `private(set)` にしましたが、これがなくても外部から `count` を変更することはできません。 `actor` に外部からアクセスするには `async` である必要がありますが、 `set async` なプロパティは Swift 5.5 では作れないからです。
 
-しかし、将来的に `set async` が可能になる可能性はあるので、仕様上 `set` を許容しないのであれば `private(set)` にしておく方が良いと思います。
+しかし、将来的に `set async` が実現される可能性はあります。 `Counter` の仕様上 `count` の `set` を許容しないのであれば `private(set)` にしておく方が良いと思います。
 :::
 
 **参考文献**
