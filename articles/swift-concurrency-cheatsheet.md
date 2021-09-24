@@ -1396,11 +1396,12 @@ final class UserViewController: UIViewController {
         state
             .objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
-                state.user { user in
+                self.state.user { user in
                     DispatchQueue.main.async {
-                        nameLabel.text = user?.name
+                        self.nameLabel.text = user?.name
                     }
                 }
             }
@@ -1456,11 +1457,11 @@ final class UserViewController: UIViewController {
         state
             .objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
                 Task {
-                    let user = await state.user
-                    nameLabel.text = user?.name
+                    self.nameLabel.text = await state.user?.name
                 }
             }
             .store(in: &cancellables)
@@ -1754,9 +1755,10 @@ final class UserViewController: UIViewController {
         state
             .objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
-                nameLabel.text = state.user?.name
+                self.nameLabel.text = state.user?.name
             }
             .store(in: &cancellables)
     }
