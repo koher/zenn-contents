@@ -756,9 +756,11 @@ func downloadData(
 ) -> DownloadCanceller
 ```
 
-上記のように、戻り値で canceller が返され、それを使ってキャンセルを実行します。また、キャンセルされたことをハンドリングできるように、（ completion ハンドラーとは別に）キャンセルをハンドリングするためのコールバック関数（上記の例では `cancellation` ）を渡せる仕様になっていることもあるでしょう。
+上記のように、戻り値で canceller が返され、それを使ってキャンセルを実行します。また、キャンセルされたことをハンドリングできるように、（ completion ハンドラーとは別に）キャンセルをハンドリングするためのコールバック関数（上記の例では `cancellation` ）が渡せることもあるでしょう。
 
-ダウンロードボタンを押すとダウンロードを開始し、キャンセルボタンを押すとダウンロードをキャンセルする例を考えてみます。次のように `@IBAction` のメソッドの中で `downloadData` を呼び出し、 `canceller` を `ViewController` のプロパティに保存しておきます。
+ダウンロードボタンを押すとダウンロードを開始し、キャンセルボタンを押すとダウンロードをキャンセルする例を考えてみます。
+
+次のように `@IBAction` のメソッドの中で `downloadData` を呼び出し、 `canceller` を `ViewController` のプロパティに保存します。
 
 ```swift
 extension ViewController {
@@ -792,7 +794,7 @@ extension ViewController {
 
 ### After
 
-`async` 関数の場合、同じ方法は使えません。戻り値は結果を返すために使われるからです。戻り値で無理やり `(Data, DownloadCanceller)` のようにして、結果と canceller をペアで返すことはできますが、それが得られるのは `await` で suspend してから resume された後です。 canceller を取得できるのは非同期処理が完了した後ということになり、戻り値で canceller を返すことには意味がありません。
+`async` 関数の場合、同じ方法は使えません。戻り値は結果を返すために使われるからです。 `(Data, DownloadCanceller)` のようにして、無理やり結果と canceller をペアにして返すことはできますが、その場合 canceller が得られるのは、 `await` で suspend してから resume された後です。つまり、 canceller が得られたときにはすでに非同期処理が完了していることになります。戻り値で canceller を返すことに意味はありません。
 
 `async` 関数をキャンセルするには `Task` を利用します。 Case 7 では `Task` のイニシャライザを使って非同期処理を開始しましたが、イニシャライズされた `Task` インスタンス自体は使いませんでした。 `Task` インスタンスには `cancel` メソッドが用意されており、 `cancel` メソッドを呼ぶことで Task をキャンセルすることができます。
 
@@ -830,7 +832,7 @@ extension ViewController {
 
 キャンセルでもエラーが発生した場合でも、処理を中断することに違いはありません。キャンセルかエラーかの区別が必要ない場合は単に `catch` すれば良いですが、ときにはキャンセルとエラーを区別したい場合もあります。
 
-たとえば今回のケースでは、エラーが起こったらアラートを表示して、ユーザーにそれを知らせるのが親切でしょう。しかし、キャンセルボタンが押された場合にはユーザーの意思によるものなので、アラートを表示する必要はありません。このような場合、キャンセルかどうかを区別して分岐する必要があります。そのような分岐は、上記のコードのように `Task.isCancelled` を調べることで実現できます。
+たとえば今回のケースでは、ダウンロード中にエラーが起こったらアラートを表示して、ユーザーに知らせるのが親切でしょう。しかし、キャンセルボタンが押された場合は、ユーザーの意思によるものなのでアラートを表示する必要はありません。このような場合、キャンセルかどうかを区別して分岐する必要があります。そのような分岐は、上記のコードのように `Task.isCancelled` を調べることで実現できます。
 
 :::message
 慣例上、 Task がキャンセルされた場合には `CancellationError` が `throw` されることになっています。そのため、次のようなコードでもキャンセルをハンドリングできるように思えます。
@@ -845,8 +847,14 @@ do {
 }
 ```
 
-しかし、キャンセル時に本当に `CancellationError` が `throw` されるかは実装依存であり、上記の方法は確実ではありません。 `catch` 後に `Task.isCancelled` で分岐することをおすすめします。
+しかし、**キャンセル時に本当に `CancellationError` が `throw` されるかは実装依存**であり、上記の方法は確実ではありません。 `catch` 後に `Task.isCancelled` で分岐することをおすすめします。
 :::
+
+Task は、 Case 9 で見たように Task Tree を作ります。
+
+![](/images/swift-concurrency-cheatsheet/task-tree.png)
+
+Task がキャンセルされると Task Tree がトラバースされ、 Tree 全体がキャンセルされます。 Before のようにコールバック関数で非同期処理が実装されている場合、このような Tree 全体のキャンセルは大変です。一つずつ注意深くキャンセルするしかありません。 After では、根っこの Task をキャンセルするだけで、 Tree 全体のキャンセルを簡単に扱うことができます。これは、 Structured Concurrency の構造化のおかげだと言えます。
 
 **参考文献**
 
@@ -861,17 +869,21 @@ do {
 
 ### After
 
-Case 11 は `async` 関数を呼び出す側で、どのようにキャンセルを実行するかの例でした。キャンセルが実行された場合に、自作の `async` 関数を正しく中断させるには注意が必要です。
+Case 11 は、 `async` 関数を呼び出す側で、どのようにキャンセルを扱うかの例でした。 `Task` の `cancel` メソッドが呼び出された場合に、自作の `async` 関数を正しく中断させるには注意が必要です。
 
-多くの場合、 `async` 関数は他の既存の `async` 関数を組み合わせて実装されることになります。その場合、それらの `async` 関数が正しくキャンセル処理を行っていれば、自作の `async` 関数で何もしなくてもキャンセルが実行されます。
+`Task` の `cancel` メソッドは、それ自体は `isCancelled` のフラグを立てるだけで、キャンセルを実行するわけではありません。処理を中断するのは非同期関数の実行側の責務です。
 
-しかし、自分でキャンセル処理を実装しないといけない場合もあります。非同期処理の一部として同期的に重めの処理を行っている場合、その途中で `Task` がキャンセルされていないかをチェックして、キャンセルされていた場合には `CancellationError` を `throw` する必要があります。
+多くの場合、 `async` 関数は他の既存の `async` 関数を組み合わせて実装されることになります。その場合、それらの（既存の） `async` 関数が正しくキャンセル処理を行っていれば、自作の `async` 関数では特別な処理を書かなくても自動的にキャンセルが実行されます。利用している `async` 関数が `CancellationError` を `throw` することで、自作の `async` 関数も `CancellationError` を `throw` するからです。
 
-ここでは例として、動画像処理で動画の中に何人の歩行者が写っているか数える関数 `countPedestrians` を考えてみます。
+しかし、自分でキャンセル処理を実装しないといけない場合もあります。利用している `async` 関数が `CancellationError` を `throw` してくれるのは、その関数を呼び出して `await` しているときだけです。もし、 `await` から `await` までの間に重めの同期処理を行っている場合、その途中で `Task` がキャンセルされていないかをチェックして、キャンセルされていた場合には `CancellationError` を `throw` する必要があります。
 
-`countPedestrians` は動画を受け取り、動画から 1 フレームずつ画像を取り出し、それらを画像処理して歩行者をカウントします。とても重い処理なので非同期関数として実装されるのが適しています。また、 `Task` がキャンセルされた場合には途中で処理を中断したいです。Task がキャンセルされたかは `Task.checkCancellation()` でチェックすることができます。 `checkCancellation` メソッドは Task がキャンセルされていた場合、 `CancellationError` を `throw` します。
+ここでは例として、動画像処理を考えます。動画の中に何人の歩行者が写っているか数える関数 `countPedestrians` を考えてみましょう。
 
-これを使うと、 `countPedestrians` 関数は次のように実装できます。
+`countPedestrians` は動画を受け取ると、動画から 1 フレームずつ画像を取り出し、画像処理して歩行者をカウントします。とても重い処理なので、非同期関数として実装されるのが適しているでしょう。当然、 `Task` がキャンセルされた場合には途中で処理を中断したいです。
+
+つまり、動画像処理の途中で Task がキャンセルされているかを定期的にチェックし、キャンセル済みの場合には `CancellationError` を `throw` したいということになります。 Task がキャンセル済みかは `Task.isCancelled` で調べることもできますが、キャンセルのチェックとエラーの `throw` を行うには `Task.checkCancellation()` が便利です。 `checkCancellation` メソッドは、 Task がキャンセル済みかをチェックし、もしキャンセルされていた場合には `CancellationError` を `throw` してくれます。
+
+`checkCancellation` メソッドを使うと、 `countPedestrians` 関数は次のように実装できます。
 
 ```swift
 func countPedestrians(in video: AVAsset) async throws -> Int {
@@ -891,9 +903,9 @@ func countPedestrians(in video: AVAsset) async throws -> Int {
 }
 ```
 
-`output.copyNextSampleBuffer()` メソッドで動画から 1 フレームずつ画像を取り出し、処理を実行します。これを `while` ループで繰り返しますが、毎フレーム最初に `checkCancellation` を呼び出すことで、 `Task` がキャンセルされると処理を中断します。
+`output.copyNextSampleBuffer()` メソッドで動画から 1 フレームずつ画像を取り出し、処理を実行します。これを `while` ループで繰り返しますが、毎フレーム最初に `checkCancellation` を呼び出すことで、 `Task` がキャンセル済みの場合は処理を中断します。
 
-しかし、単にキャンセルするだけでなく、クリーンアップ処理などキャンセルに付随した処理が必要となる場合もあります。そのような場合には `Task.isCancelled` で分岐し、明示的に `CancellationError` を `throw` します。
+キャンセル時に単に処理を中断すれば良い場合は、このように `checkCancellation` メソッドが便利です。しかし、処理を中断するだけでなく、クリーンアップ処理などキャンセルに付随した処理が必要となる場合もあります。そのようなケースでは `Task.isCancelled` で分岐し、クリーンアップ処理を行ってから明示的に `CancellationError` を `throw` します。
 
 ```swift
 // キャンセルに付随した処理が必要な場合
@@ -997,9 +1009,9 @@ Task がキャンセルされると、 `withTaskCancellationHandler` の `onCanc
 ⛔ Reference to captured var 'urlSessionTask' in concurrently-executing code
 ```
 
-これは、並行処理の安全性のために、 `var` で宣言された `canceller` を `onCancel` でキャプチャすることができないためです。
+これは、並行処理の安全性のために、 `var` で宣言された `canceller` を `onCancel` のクロージャでキャプチャすることができないためです。
 
-同様の問題は Proposal のコードにも存在し、これもコンパイルすることができません。無理やりなワークアラウンドで回避することは可能ですが、良い解決法が見つかるまで Proposal に沿った上記のコードのままとしておきたいと思います。
+同様の問題は Proposal のコードにも存在し、 Proposal のコードもコンパイルすることができません。無理やりなワークアラウンドで回避することは可能ですが、良い解決法が見つかるまでは、 Proposal に沿った上記のコードのままとしておきたいと思います。
 :::
 
 **参考文献**
@@ -1044,13 +1056,13 @@ DispatchQueue.global().async {
 
 期待すべき挙動は、片方が 1 を、もう片方が 2 を返すことです。どちらがわずかに早く実行されるかは運次第ですが、いずれにせよ片方が 1 でもう片方が 2 であることが期待されます。
 
-しかし、現実には両方 2 を返すこともあります。なぜなら、今 `increment` メソッドは同時に呼び出されるので、両者の `count += 1` が呼ばれた後でそれぞれ `return count` されることがあり得るからです。この場合、 2 回インクリメントされた後の値が `return` されるので、両方とも 2 を返すことになります。これがデータ競合です。
+しかし、現実には両方 2 を返すこともあります。なぜなら、今 `increment` メソッドは同時に呼び出されるため、まず両者の `count += 1` が実行され、その後でそれぞれの `return count` が実行されることがあり得るからです。この場合、 2 回インクリメントされた後の値が `return` されるので、両方とも 2 を返すことになります。これがデータ競合です。
 
 データ競合を防ぐには `increment` メソッドが同時に実行されないようにする必要があります。
 
 ### Before
 
-データ競合を防ぐための古典的な方法はロックです。しかし、ロックはスレッドをブロックしてしまうためパフォーマンスがよくないですし、メインスレッドをブロックするような場合には UI がフリーズする原因になります。また、（カウンターのような単純な処理はともかく）複雑な並行処理をロックで制御しようとするとデッドロックの危険が高まります。
+データ競合を防ぐための古典的な手法はロックです。しかし、ロックはスレッドをブロックしてしまうためパフォーマンスがよくありません。メインスレッドをブロックするような場合には UI がフリーズする原因にもなります。また、（カウンターのような単純な処理はともかく）複雑な並行処理をロックで制御しようとするとデッドロックの危険が高まります。
 
 そのため、 iOS アプリ開発では多くの場合 `DispatchQueue` のシリアルキューが用いられてきました。これを使って `Counter` を実装すると次のようになります。
 
@@ -1068,15 +1080,15 @@ final class Counter {
 }
 ```
 
-`Counter` に `queue` を持たせ `increment` メソッドのオペレーションを丸ごと `queue` に入れて実行することで、オペレーションが同時に実行されることを防いでいます。
+シリアルキューは、キューに入れられたオペレーションを一つずつ取り出し、順に実行します。 `Counter` に `queue` を持たせ、 `increment` メソッドのオペレーションを丸ごと `queue` に入れることで、オペレーションが同時に実行されることを防いでいます。
 
-ただし、オペレーションを一度 `queue` に入れてから実行するということは、結果は非同期的に得られることになります。そのため、 completion ハンドラーを用いて結果を返します。
+ただし、オペレーションを `queue` に入れてから実行するということは、結果は非同期的に得られることになります。そのため、 completion ハンドラーを用いて結果を返します。
 
 ### After
 
 Swift Concurrency で導入された `actor` を用いれば、より簡潔に安全な `Counter` を実装することができます。
 
-`actor` はクラスと同じような参照型の型を宣言します。 `actor` を使うと Before と同様の安全な `Counter` は次のように書けます。
+`actor` はクラスと同じような参照型の型を宣言します。 `actor` を使うと、データ競合を起こさない安全な `Counter` は次のように書けます。
 
 ```swift
 actor Counter {
@@ -1089,11 +1101,11 @@ actor Counter {
 }
 ```
 
-このコードは最初の安全**でない** `Counter` クラスのコードとほとんど同じです。異なるのは、 `final class` が `actor` になった点だけです。
+このコードは最初に挙げた安全**でない** `Counter` クラスのコードとほとんど同じです。異なるのは、 `final class` が `actor` になった点だけです。
 
-`actor` はインスタンスごとに内部にキューを持ち（ Actor 用語では mailbox と呼びます）、 `actor` のメソッドを呼び出すと、そのオペレーション（ Actor 用語では message と呼びます）は自動的にキューに追加され、非同期的に実行されます。そのため、上記の `increment` メソッドは必ず同時に一つしか実行されないことが保証されます。
+`actor` はインスタンスごとに内部にキューを持ちます（ Actor の用語では mailbox と呼びます）。 `actor` のメソッドを呼び出すと、そのオペレーション（ Actor の用語では message と呼びます）は自動的にキューに追加され、一つずつ順番に実行されます。そのため、上記の `increment` メソッドは必ず同時に一つしか実行されないことが保証されます。
 
-つまり、 `actor` は Before で書いたような処理を自動的に行なってくれると言えます。 `increment` メソッドは非同期的に実行されるため、外部から呼び出す場合には `async` メソッドに見えます。
+つまり、 `actor` は Before で `DispatchQueue` を用いて書いたような処理を、自動的に行なってくれると言えます。 `increment` メソッドは非同期的に実行されるため、外部から呼び出す場合には `async` メソッドに見えるようになっています。
 
 ```swift
 // 外部から見た increment メソッド
@@ -1114,10 +1126,10 @@ Task.detached {
 }
 ```
 
-この `increment` メソッドのように `actor` のキューによってデータ競合から守られていることを **actor-isolated** であると言います。
+このように `actor` のキューによって、共有された状態をデータ競合から守る仕組みを **actor isolation** と呼びます。
 
 :::message
-`actor` が内部に保持しているキューの実装は `DispatchQueue` ではありません。 serial executor というより軽量な実装が用いられています。
+`actor` が内部に保持しているキューは serial executor と呼ばれます。 serial executor は、概念的には `DispatchQueue` とよく似ていますが、（デフォルトでは） `DispatchQueue` を用いて実装されているわけではありません。より軽量な実装となっており、 `DispatchQueue` と比べてパフォーマンス上も優れています。
 :::
 
 **参考文献**
@@ -1127,13 +1139,13 @@ Task.detached {
 
 ## 💼 Case 15 (`actor`): 共有された状態の変更（インスタンス内でのメソッド呼び出し）
 
-Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンス内部から `Counter` のメソッドを呼ぶケースを考えてみます。
+Case 14 の `increment` メソッドは外部からしか呼ばれていませんが、同じインスタンスの内部から `Counter` のメソッドを呼ぶケースを考えてみます。
 
-ここでは、 2 回カウンターをインクリメントする `incrementTwice` メソッドを考えます。すでに `increment` メソッドがあるので、これを使って `incrementTwice` メソッドを実装します。
+ここでは、（あまり現実的な例ではないですが） 2 回カウンターをインクリメントする `incrementTwice` メソッドを考えます。すでに `increment` メソッドがあるので、これを使って `incrementTwice` メソッドを実装します。
 
 ### Before
 
-`DispatchQueue` & コールバック関数による `Counter` の場合、単純に考えると次のように `incrementTwice` メソッドを実装してしまいます。しかし、これは競合状態を引き起こします。
+`DispatchQueue` & コールバック関数による `Counter` の場合、単純に考えると次のように `incrementTwice` メソッドを実装してしまいそうです。しかし、これは競合状態を引き起こします。
 
 :::details 競合状態を引き起こす実装
 ```swift
@@ -1154,9 +1166,13 @@ final class Counter {
 ```
 :::
 
-一つの `Counter` に対して同時に `incrementTwice` メソッドを呼び出した場合、期待する結果は片方が 2 を、もう片方が 4 を返すことです。しかし、 `increment` メソッドのオペレーションは `queue` に入れられて実行されるものの、 2 回のインクリメントはばらばらに `queue` に追加されます。そのため、 2 回インクリメントする途中の状態が外部から観測される可能性があります。前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+`incrementTwice` メソッドを 2 回同時に呼び出した場合、期待される結果は片方が 2 、もう片方が 4 を返すことです。しかし、上記のような実装の場合、そのような結果が得られるとは限りません。
 
-これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。そのためにここでは、同期的なインクリメントを行う `_increment` メソッドを実装し、**非**同期的な `increment` メソッドは `_increment` の呼び出しを `queue` に入れる形で実装します。また `incrementTwice` は同じく、同期的に `_increment` メソッドを 2 回呼び出すオペレーションを `queue` に入れる形で実装します。
+`increment` メソッドのオペレーションは `queue` で守られています。しかし、 2 回呼び出される `increment` メソッドのオペレーションはバラバラに `queue` に追加されます。そのため、 2 回のインクリメントは一度に同期的に実行されるわけではなく、 2 回に分けて実行されます。すると、 2 回のオペレーションの途中の状態が外部から観測されてしまう可能性があります。たとえば前述の例では、 2 と 4 ではなく 3 と 4 が返される場合があります。
+
+これを防ぐには、 2 回のインクリメントを同期的に実行する必要があります。しかし、 `increment` メソッドは非同期なので、同期的に 2 回呼び出すことはできません。そこで、 `increment` メソッドとは別に、同期的なインクリメントを行う `_increment` メソッドを実装します。このとき、**非**同期的な `increment` メソッドは `_increment` の呼び出しを `queue` に入れる形で実装できます。
+
+`_increment` メソッドがあれば、 2 回のインクリメントを同期的に行うことが可能になります。 `incrementTwice` メソッドは、 `queue` に入れたオペレーションの上で、 `_increment` メソッドを 2 回同期的に呼び出します。
 
 ```swift
 final class Counter {
@@ -1185,11 +1201,11 @@ final class Counter {
 }
 ```
 
-このようにすれば、 `incrementTwice` の途中状態が外部から観測されるのを防ぐことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることはありません。このため、 `increment` や `incrementTwice` で外部から `queue` を介して `count` を観測する限り、途中状態が観測されることはありません。
+このようにすれば、 `incrementTwice` による 2 回のインクリメントの途中状態が外部から観測されるのを防ぐことができます。 `queue` は同時に一つのオペレーションしか実行せず、同期的なオペレーションは分断されることはありません。そのため、（ `increment` や `incrementTwice` を用いて）外部から `queue` を介して `count` を観測する限り、途中状態が観測されることはありません。
 
-`_increment` メソッドは `private` になっていることに注意して下さい。 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
+`_increment` メソッドは `private` になっていることに注意して下さい。データ競合を防ぐためには、 `queue` を介さない `_increment` メソッドを公開するわけにはいきません。
 
-このように、外部からは非同期に、内部（一度 `queue` に乗せてしまって）からは同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし、内部用と外部用に、同期版・非同期版のメソッドを用意する二重化が必要になります。これは定型的な処理で、それらを扱うコードはボイラープレートとなります。
+このように、共有された状態をインスタンス外部からは非同期に、内部（一度 `queue` に乗せてしまって）からは同期的に扱えるようにすることで、データ競合や競合状態を防ぐことができます。しかし、適切にデータを保護するには内部用と外部用に、同期版・非同期版のメソッドを二重に提供することが求められます。それらは定型的な処理で、そのような処理を扱うコードはボイラープレートとなります。
 
 ### After
 
@@ -1212,7 +1228,7 @@ actor Counter {
 }
 ```
 
-`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではすでにオペレーションがキューに入れられて実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
+`actor` のメソッドは外部からは `async` に見えましたが、インスタンス内部からはただの同期メソッドに見えます。これは、インスタンス内部ではオペレーションはすでにキューに保護された状態で実行されており、改めてキューに乗せる必要がないからです。そのため、 `incrementTwice` から `increment` メソッドを呼び出す際に `await` は不要です。
 
 これは、 Before で実現したかったこと（外部からは非同期（ `async` ）に、内部からは同期に）を自動的に実現しているということです。コードの二重化なしにこれを実現できるのが、 `actor` の最も重要な機能です。
 
@@ -1221,13 +1237,13 @@ actor Counter {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 16 (`actor`, `get async`): 共有された状態の変更（ getter ）
+## 💼 Case 16 (`actor`, `get async`): 共有された状態の変更（ getter ）
 
-Case 14, 15 では `count` を外部からは隠蔽していましたが、インクリメントすることなくカウントを取得したいことも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
+Case 14, 15 では `count` プロパティを外部から隠蔽していました。 Case 14, 15 の `Counter` では、カウントを観測するにはインクリメントが必須です。しかし、インクリメントすることなくカウントを取得したいケースも考えられます。どうすれば安全に `count` を公開できるかを考えてみます。
 
 ### Before
 
-`count` は `queue` を使って非同期的に結果を返さないといけないので、 `count` をコールバック関数で結果を返すメソッドにします。
+`queue` を介さずに `count` の値を返してしまうとデータ競合を引き起こす可能性があります。 `queue` を介して値を返すにはコールバック関数が必要なので、 `count` をプロパティではなくメソッドに変更します。
 
 ```swift
 final class Counter {
@@ -1253,7 +1269,7 @@ final class Counter {
 
 ### After
 
-`actor` を用いる場合、単に `count` を `private(set)` にして公開します。
+`actor` を用いる場合、単に `count` の `private` を外せば OK です（次のコードでは、 `set` は公開したくないので `private(set)` にしています）。
 
 ```swift
 actor Counter {
@@ -1268,7 +1284,7 @@ actor Counter {
 
 `actor` のメソッドに外部からアクセスする場合は `async` に見えましたが、プロパティである `count` はどのように見えるのでしょうか。
 
-Swift 5.5 で [Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md) が追加され、プロパティも `throws` や `async` になることができるようになりました。これを用いて、 `count` は外部からアクセスされた場合、 `async` なプロパティのように振る舞います。つまり、外部から `count` にアクセスするには `await` が必要になります。
+Swift 5.5 で [Effectful Read-only Properties](https://github.com/apple/swift-evolution/blob/main/proposals/0310-effectful-readonly-properties.md) が追加され、プロパティにも `throws` や `async` を付与することが可能となりました。これを用いて、 `count` は外部からアクセスされた場合、 `async` なプロパティのように振る舞います。つまり、外部から `count` にアクセスするには `await` が必要になります。
 
 ```swift
 print(await counter.count)
@@ -1277,9 +1293,9 @@ print(await counter.count)
 :::message
 Effectful Read-only Properties は名前の通り read-only です。今のところ `set` を `async` にすることはできません。
 
-上記の例では `count` を `private(set)` にしましたが、これがなくても外部から `count` を変更することはできません。 `actor` に外部からアクセスするには `async` である必要がありますが、非同期的に `count` を `set` する方法がないためです。
+上記の例では `count` を `private(set)` にしましたが、これがなくても外部から `count` を変更することはできません。 `actor` に外部からアクセスするには `async` である必要がありますが、 `set async` なプロパティは Swift 5.5 では作れないからです。
 
-しかし、将来的に `set async` が可能になる可能性はあるので、仕様上 `set` を許容しないのであれば `private(set)` にしておく方が良いと思います。
+しかし、将来的に `set async` が実現される可能性はあります。 `Counter` の仕様上 `count` の `set` を許容しないのであれば `private(set)` にしておく方が良いと思います。
 :::
 
 **参考文献**
@@ -1296,11 +1312,11 @@ Effectful Read-only Properties は名前の通り read-only です。今のと�
 
 ### After
 
-`acotr` のインスタンス内部からはメソッドが同期的に見えますが、これは同じインスタンス内部に限った話です。同じ型の `actor` であっても、インスタンスが異なれば内部に持つキューも異なります。そのため、別のインスタンスのメソッドを呼び出すときには `async` として扱う必要があります。
+Case 16 で見たように、 `actor` のインスタンス内部からは同じインスタンスのメソッドが同期的に見えます。しかし、これはあくまでも同じインスタンスに限った話です。同じ型の `actor` であっても、インスタンスが異なれば内部に持つキューも異なります。そのため、別のインスタンスのメソッドを呼び出すときには `async` として扱う必要があります。
 
-ここでは、 `Counter` のインスタンスから別のインスタンスへカウントを転送する例を考えてみます。あまり現実的な例ではありませんが、これがカウンターではなく口座間送金などの処理であれば似たような状況が起こり得ます。
+ここでは、 `Counter` のあるインスタンスから別のインスタンスへ、カウントを転送する例を考えてみます。あまり現実的な例ではありませんが、 `Counter` ではなく口座間送金などの処理であれば似たような状況が起こり得ます。
 
-今、 `Counter` は `increment` メソッドと `decrement` メソッドを持っているとし、別のカウンターにカウントを 1 だけ転送する `transferCount` メソッドを考えます。
+今、 `Counter` は `increment` メソッドに加えて `decrement` メソッドを持っているとします。このとき、別のカウンターにカウントを 1 だけ転送する `transferCount` メソッドは次のように書けます。
 
 ```swift
 actor Counter {
@@ -1325,7 +1341,9 @@ actor Counter {
 
 `transferCount` メソッドでは、自分のカウントをデクリメントしてから転送先カウンターのカウントをインクリメントします。こうすることでカウントが 1 転送されたように振る舞わせることができます。
 
-このとき、自分の `decrement` メソッドの呼び出しには特に問題はないですが、相手の `increment` メソッドは `async` に見えるので `await` が必要になります。このため、 `transferCount` メソッド自体も明示的に `async` である必要があります（これは、 `transferCount` メソッドを呼び出す場合に、たとえ同じインスタンス内からの呼び出しであっても `await` しなければならないことを意味します）。
+`another.increment()` に `await` が付与されていることに注意して下さい。自分（ `self` ）の `decrement` メソッドは同期的に呼び出すことができますが、転送先（ `another` ）の `increment` メソッドは同期的に呼び出すことができません。同じ型の `actor` でもインスタンスが異なれば異なるキューで守られているため、外部からのアクセスという扱いになり、 `async` なメソッドとして振る舞うからです。当然、呼び出す際には `await` が必要となります。
+
+このため、 `transferCount` メソッド自体も明示的に `async` である必要があります。このように明示的に `async` が付与された場合、同じインスタンス内から `transferCount` メソッドを呼び出す場合にも `async` メソッドとして振る舞います。
 
 **参考文献**
 
@@ -1334,9 +1352,9 @@ actor Counter {
 
 ## 💼 Case 18 (`actor`, `ObservableObject`): 共有された状態の変更（非同期処理結果の反映）
 
-カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないように適切に守る必要があります。
+カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないよう（データ競合を引き起こさないように）に、状態を保護する必要があります。
 
-Case 7 では `viewDidAppear` から直接 `fetchUser` を呼び出しましたが、 `fetchUser` を呼び出して状態を変更する処理を ViewModel に移動し、 `viewDidAppear` からは単に処理のトリガーするだけにします。
+Case 7 の `UserViewController` を再度、例として取り上げます。 Case 7 では `viewDidAppear` から直接 `fetchUser` を呼び出していました。ロジックを直接 View Controller に記述するのは望ましくないので、 `fetchUser` を呼び出して状態を変更する処理を ViewModel に移動します。そして、 `viewDidAppear` からは単に処理をトリガーするだけにします。
 
 ### Before
 
@@ -1371,7 +1389,7 @@ final class UserViewState: ObservableObject {
 
 これを利用する `UserViewController` のコードは次のようになります。
 
-`viewDidApperar` から `loadUser` メソッドを呼び出して、サーバーからデータを取得させます。
+まず、 `viewDidApperar` から `loadUser` メソッドを呼び出して、サーバーからデータを取得させます。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1384,7 +1402,7 @@ final class UserViewController: UIViewController {
 }
 ```
 
-また、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるかもしれないので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
+そして、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるかもしれないので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1395,12 +1413,12 @@ final class UserViewController: UIViewController {
         ...
         state
             .objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
-                state.user { user in
+                self.state.user { user in
                     DispatchQueue.main.async {
-                        nameLabel.text = user?.name
+                        self.nameLabel.text = user?.name
                     }
                 }
             }
@@ -1412,7 +1430,7 @@ final class UserViewController: UIViewController {
 
 ### After
 
-`actor` を使うと `UserViewState` は次のように書けます。 `queue` がないのと、 `user` を非同期化して二重化するコードが必要ないため、 Before と比べると簡潔に書けます。
+`actor` を使うと `UserViewState` は次のように書けます。 Before と比べるとずいぶんと簡潔です。これは、明示的に `queue` を扱う必要がないのと、 `user` を同期・非同期の二重化する必要がないからです。
 
 ```swift
 actor UserViewState: ObservableObject {
@@ -1429,7 +1447,7 @@ actor UserViewState: ObservableObject {
 }
 ```
 
-利用側のコードには `await` が必要なことに注意が必要です。 Case 7 と同じように `Task` を使います。
+利用側のコードには `await` が必要なことに注意して下さい。 Case 7 と同じように `Task` を使います。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1456,11 +1474,11 @@ final class UserViewController: UIViewController {
         state
             .objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
                 Task {
-                    let user = await state.user
-                    nameLabel.text = user?.name
+                    self.nameLabel.text = await state.user?.name
                 }
             }
             .store(in: &cancellables)
@@ -1754,9 +1772,10 @@ final class UserViewController: UIViewController {
         state
             .objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [self] _ in
+            .sink { [weak self] _ in
+                guard let self = self else { return }
                 // state を View に反映する処理
-                nameLabel.text = state.user?.name
+                self.nameLabel.text = state.user?.name
             }
             .store(in: &cancellables)
     }
