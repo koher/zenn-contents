@@ -1312,11 +1312,11 @@ Effectful Read-only Properties は名前の通り read-only です。今のと�
 
 ### After
 
-`acotr` のインスタンス内部からはメソッドが同期的に見えますが、これは同じインスタンス内部に限った話です。同じ型の `actor` であっても、インスタンスが異なれば内部に持つキューも異なります。そのため、別のインスタンスのメソッドを呼び出すときには `async` として扱う必要があります。
+Case 16 で見たように、 `actor` のインスタンス内部からは同じインスタンスのメソッドが同期的に見えます。しかし、これはあくまでも同じインスタンスに限った話です。同じ型の `actor` であっても、インスタンスが異なれば内部に持つキューも異なります。そのため、別のインスタンスのメソッドを呼び出すときには `async` として扱う必要があります。
 
-ここでは、 `Counter` のインスタンスから別のインスタンスへカウントを転送する例を考えてみます。あまり現実的な例ではありませんが、これがカウンターではなく口座間送金などの処理であれば似たような状況が起こり得ます。
+ここでは、 `Counter` のあるインスタンスから別のインスタンスへ、カウントを転送する例を考えてみます。あまり現実的な例ではありませんが、 `Counter` ではなく口座間送金などの処理であれば似たような状況が起こり得ます。
 
-今、 `Counter` は `increment` メソッドと `decrement` メソッドを持っているとし、別のカウンターにカウントを 1 だけ転送する `transferCount` メソッドを考えます。
+今、 `Counter` は `increment` メソッドに加えて `decrement` メソッドを持っているとします。このとき、別のカウンターにカウントを 1 だけ転送する `transferCount` メソッドは次のように書けます。
 
 ```swift
 actor Counter {
@@ -1341,7 +1341,9 @@ actor Counter {
 
 `transferCount` メソッドでは、自分のカウントをデクリメントしてから転送先カウンターのカウントをインクリメントします。こうすることでカウントが 1 転送されたように振る舞わせることができます。
 
-このとき、自分の `decrement` メソッドの呼び出しには特に問題はないですが、相手の `increment` メソッドは `async` に見えるので `await` が必要になります。このため、 `transferCount` メソッド自体も明示的に `async` である必要があります（これは、 `transferCount` メソッドを呼び出す場合に、たとえ同じインスタンス内からの呼び出しであっても `await` しなければならないことを意味します）。
+`another.increment()` に `await` が付与されていることに注意して下さい。自分（ `self` ）の `decrement` メソッドは同期的に呼び出すことができますが、転送先（ `another` ）の `increment` メソッドは同期的に呼び出すことができません。同じ型の `actor` でもインスタンスが異なれば異なるキューで守られているため、外部からのアクセスという扱いになり、 `async` なメソッドとして振る舞うからです。当然、呼び出す際には `await` が必要となります。
+
+このため、 `transferCount` メソッド自体も明示的に `async` である必要があります。このように明示的に `async` が付与された場合、同じインスタンス内から `transferCount` メソッドを呼び出す場合にも `async` メソッドとして振る舞います。
 
 **参考文献**
 
@@ -1350,9 +1352,9 @@ actor Counter {
 
 ## 💼 Case 18 (`actor`, `ObservableObject`): 共有された状態の変更（非同期処理結果の反映）
 
-カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないように適切に守る必要があります。
+カウンターよりも現実的な例として、 ViewModel で非同期処理を行い、その非同期処理結果を View に反映する例を考えてみます。このとき、 ViewModel の状態が同時に読み書きされないよう（データ競合を引き起こさないように）に、状態を保護する必要があります。
 
-Case 7 では `viewDidAppear` から直接 `fetchUser` を呼び出しましたが、 `fetchUser` を呼び出して状態を変更する処理を ViewModel に移動し、 `viewDidAppear` からは単に処理のトリガーするだけにします。
+Case 7 の `UserViewController` を再度、例として取り上げます。 Case 7 では `viewDidAppear` から直接 `fetchUser` を呼び出していました。ロジックを直接 View Controller に記述するのは望ましくないので、 `fetchUser` を呼び出して状態を変更する処理を ViewModel に移動します。そして、 `viewDidAppear` からは単に処理をトリガーするだけにします。
 
 ### Before
 
@@ -1387,7 +1389,7 @@ final class UserViewState: ObservableObject {
 
 これを利用する `UserViewController` のコードは次のようになります。
 
-`viewDidApperar` から `loadUser` メソッドを呼び出して、サーバーからデータを取得させます。
+まず、 `viewDidApperar` から `loadUser` メソッドを呼び出して、サーバーからデータを取得させます。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1400,7 +1402,7 @@ final class UserViewController: UIViewController {
 }
 ```
 
-また、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるかもしれないので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
+そして、 `state` の変更を `objectWillChange` を購読して監視し、サーバーから取得された `user` の情報を `nameLabel` に反映します。 `user` はメインスレッド**でない**スレッドから返ってくるかもしれないので、 `DispatchQueue.main` を使ってメインスレッド上で View への反映を行っています。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1429,7 +1431,7 @@ final class UserViewController: UIViewController {
 
 ### After
 
-`actor` を使うと `UserViewState` は次のように書けます。 `queue` がないのと、 `user` を非同期化して二重化するコードが必要ないため、 Before と比べると簡潔に書けます。
+`actor` を使うと `UserViewState` は次のように書けます。 Before と比べるとずいぶんと簡潔です。これは、明示的に `queue` を扱う必要がないのと、 `user` を同期・非同期の二重化する必要がないからです。
 
 ```swift
 actor UserViewState: ObservableObject {
@@ -1446,7 +1448,7 @@ actor UserViewState: ObservableObject {
 }
 ```
 
-利用側のコードには `await` が必要なことに注意が必要です。 Case 7 と同じように `Task` を使います。
+利用側のコードには `await` が必要なことに注意して下さい。 Case 7 と同じように `Task` を使います。
 
 ```swift
 final class UserViewController: UIViewController {
