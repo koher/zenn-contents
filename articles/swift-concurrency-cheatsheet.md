@@ -1413,7 +1413,6 @@ final class UserViewController: UIViewController {
         ...
         state
             .objectWillChange
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 // state を View に反映する処理
