@@ -1504,7 +1504,7 @@ final class UserViewController: UIViewController {
 
 ### After
 
-Case 18 では何気なく `actor` から `User` を取り出しましたが、これはそれほど簡単な話ではありません。
+Case 18 では前置きなく `actor` から `User` を取り出しましたが、これはそれほど単純な話ではありません。
 
 取り出した `User` が次のような `struct` であれば問題ありません。
 
@@ -1517,7 +1517,7 @@ struct User {
 }
 ```
 
-しかし、次のようなクラスだとどうでしょうか。
+しかし、クラスだとどうでしょうか。
 
 ```swift
 final class User {
@@ -1528,7 +1528,7 @@ final class User {
 }
 ```
 
-このとき、 `actor` から取り出した `User` インスタンスは、 `actor` の内外で共有されることになります。すると、次のように `actor` から取り出した `user` に変更を加えた場合、その変更は `actor` の内部にも影響を及ぼします。この変更は `actor` に守られていない（ actor-isolated でない）ので、データ競合を引き起こす可能性があります。そのため、コンパイラはこのようなコードをコンパイルエラーとします。
+このとき、 `actor` から取り出した `User` インスタンスは、 `actor` の内外で共有されることになります。すると、 `actor` から取り出した `user` に変更を加えた場合、その変更は `actor` の内部にも影響を及ぼします。この変更は `actor` に守られていないので、データ競合を引き起こす可能性があります。そのため、コンパイラは次のようなコードをコンパイルエラーとします。
 
 ```swift
 let user = await state.user // ⛔ コンパイルエラー
@@ -1547,15 +1547,15 @@ final class User {
 ```
 
 ```swift
-let user = await state.user // ✅ OK
+let user = await state.user // ✅ データ競合の原因にならない
 user?.age += 1 // ⛔ 変更できない
 ```
 
-上記は `actor` から値を取得する例でしたが、 `actor` が外部から値を受け取る場合にも同じことが言えます。
+上記は `actor` から値を取得する例でしたが、外部から `actor` に値を渡す場合にも同じことが言えます。
 
 では、コンパイラはどのようにして `actor` 内外のやりとりを許可するか判断するのでしょうか。
 
-そのために導入されたのが [`Sendable`](https://developer.apple.com/documentation/swift/sendable) プロトコルです。 `Sendable` に適合する型は `actor` の内外でやりとりすることができます。 `Int` や `String` などの型はすべて `Sendable` に適合しており、そのためカウンターから問題なく `count` を取り出すことができました。
+そのために導入されたのが [`Sendable`](https://developer.apple.com/documentation/swift/sendable) プロトコルです。 `Sendable` に適合する型は `actor` の内外でやりとりすることができます。 `Int` や `String` などの型はすべて `Sendable` に適合しており、そのため `Counter` から安全に `count` を取り出すことができました。
 
 `actor` から `User` を取り出せるようにするためには、 `User` を `Sendable` に適合させる必要があります。
 
@@ -1571,7 +1571,7 @@ struct User: Sendable {
 :::message
 `public` でない値型の場合、暗黙的に `Sendable` に適合します。そのため、上記の例では明示的に `Sendable` に適合させる必要はありません。
 
-本記事のコードは冗長な記述にならないように `public` を省略しています。通常、 `User` のような Entity は `public` で宣言される（アプリ本体とは別モジュールで宣言されることが多い）と思います。そのような場合には上記のように `Sendable` に適合させることが必要です。
+本記事のコードは記述が冗長にならないように `public` を省略しています。通常、 `User` のような Entity は `public` で宣言される（アプリ本体とは別モジュールで宣言される）ことが多いと思います。そのような場合には上記のように `Sendable` に適合させることが必要です。
 :::
 
 しかし、どんな型でも `Sendable` に適合できるわけではありません。たとえば、 `var` プロパティを持つクラスは `Sendable` に適合することができません。
@@ -1586,7 +1586,7 @@ final class User: Sendable {
 }
 ```
 
-`let` プロパティしか持たないイミュータブルクラスは `Sendable` に適合することができます。
+`let` プロパティしか持たないイミュータブルクラスは `Sendable` に適合できます。
 
 ```swift
 // ✅ let プロパティしか持たないので OK
@@ -1603,16 +1603,16 @@ final class User: Sendable {
 たとえば、 `Sendable` でない `NSString` をプロパティに持つと `Sendable` に適合することはできません。
 
 ```swift
-// ⛔ `Sendable` でない型のプロパティを持つのでコンパイルエラー
+// ⛔ Sendable でない型のプロパティを持つのでコンパイルエラー
 final class User: Sendable {
     let id: ID
-    let name: NSString
+    let name: NSString // ⛔ Sendable でない
     let age: Int
     ...
 }
 ```
 
-次のように、 read-only な Computed Property を持っていてもイミュータビリティは崩れません。このような型も `Sendable` に適合させることができます。
+Computed Property は問題ありません。次の例では `var name: String` を持ちますが、これはイミュータビリティに影響を与えません。
 
 ```swift
 // ✅ Computed Property を持っていてもイミュータブルなので OK
@@ -1622,24 +1622,26 @@ final class User: Sendable {
     let familyName: String
     let age: Int
     
-    var name: String {
+    var name: String { // ✅ イミュータビリティに影響しない
         "\(firstName) \(familyName)"
     }
     ...
 }
 ```
 
-上記の `User` を改良して、次のような型を作るとどうなるでしょうか。毎回 `name` を作る計算コストを軽減するために、初回アクセス時に `name` をキャッシュするようにします。
+では、上記の `User` を改良して、次のような型を作るとどうなるでしょうか。毎回 `"\(firstName) \(familyName)"` で `name` を生成する計算コストを軽減するために、初回アクセス時に生成した文字列を `_name` にキャッシュするようにします。
 
 ```swift
+// ⛔ セマンティクス上はイミュータブルなのにコンパイルエラーになってしまう
 final class User: Sendable {
     let id: ID
     let firstName: String
     let familyName: String
     let age: Int
     
-    private var _name: String? // ⛔
+    private var _name: String? // ⛔ var プロパティ
     var name: String {
+        // 本当は同時にアクセスされても大丈夫なように守る必要あり
         if _name == nil {
             _name = "\(firstName) \(familyName)"
         }
@@ -1649,19 +1651,21 @@ final class User: Sendable {
 }
 ```
 
-このとき、 `User` のイミュータビリティは崩れていませんが、 `var` プロパティを持つために `User` は `Sendable` に適合できなくなってしまいます。
+このとき、セマンティクス上は `User` のイミュータビリティは崩れていませんが、 `var` プロパティを持つために `User` は `Sendable` に適合できなくなってしまいます。
 
-このように、 `Sendable` として取り扱っても安全とわかっている型を、強制的に `Sendable` に適合させることもできます。それには `@unchecked` を使います。
+このように、 `Sendable` として取り扱っても安全とわかっている型を、強制的に `Sendable` に適合させたいときもあります。それには `@unchecked` を使います。
 
 ```swift
+// ✅ @unchecked を使って無理やり Sendable に適合させる
 final class User: @unchecked Sendable {
     let id: ID
     let firstName: String
     let familyName: String
     let age: Int
     
-    private var _name: String? // ✅
+    private var _name: String? // ✅ @unchecked なので OK
     var name: String {
+        // 本当は同時にアクセスされても大丈夫なように守る必要あり
         if _name == nil {
             _name = "\(firstName) \(familyName)"
         }
@@ -1675,21 +1679,21 @@ final class User: @unchecked Sendable {
 
 その他に `Sendable` に適合しているものとして `actor` が挙げられます。 `actor` はキューに守られているので、 `actor` の内外で別の `actor` のインスタンスをやりとりしてもデータ競合を引き起こしません。そのため、 `actor` は自動的に `Sendable` に適合します。
 
-プロトコルに適合させられないものもあります。たとえば、 `actor` が高階メソッドを実装したいとします。しかし、関数やクロージャをプロトコルに適合させることができないので、そのままでは高階メソッドの引数として渡すことができません。
+プロトコルに適合させられないものもあります。たとえば、 `actor` が高階メソッドを実装したいとします。しかし、関数やクロージャはプロトコルに適合させることができません。そのため、 `Sendable` に適合できず、そのままでは高階メソッドの引数として渡すことができません。
 
 ```swift
 actor Foo {
-    func bar(_ f: (String) -> Int) { // ⛔
+    func bar(_ f: (String) -> Int) { // ⛔ (String) -> Int は Sendable でない
         // ...
     }
 }
 ```
 
-関数やクロージャが `Sendable` に適合していることを表すために、 `@Sendable` が利用できます。
+関数やクロージャが `Sendable` に適合していることを表すためには、 `@Sendable` が利用できます。
 
 ```swift
 actor Foo {
-    func bar(_ f: @Sendable (String) -> Int) { // ✅
+    func bar(_ f: @Sendable (String) -> Int) { // ✅　@Sendable クロージャ
         // ...
     }
 }
@@ -1722,7 +1726,7 @@ final class UserViewState: ObservableObject {
 
 `actor` の場合はどうすれば良いでしょうか。 `actor` のキューはインスタンスごとに自動的に作られるため、メインキューに差し替えることができません。
 
-そのような場合に利用できるのが [Global Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md) です。 Global Actor は名前の通り Global に一つのキューを持つ Actor です。複数のクラスを同じキューで守ったり（ isolate したり）、型を丸ごとではなく個別のメソッド単位で isolate することが可能です。
+そのような場合に利用できるのが [Global Actor](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md) です。 Global Actor は名前の通りグローバルに一つのキューを持つ Actor です。複数のクラスやインスタンスを同じキューで守ったり（ isolate したり）、型を丸ごとではなく個別のメソッド単位で isolate することが可能です。
 
 標準ライブラリが提供する、最も代表的な Global Actor が `MainActor` です。 `MainActor` はキューとして `DispatchQueue.main` を利用します。
 
@@ -1741,13 +1745,13 @@ final class UserViewState: ObservableObject {
 
 Case 18 では `actor` だったところを `final class` に変更し、 `@MainActor` を付与しました。これによって、 `UserViewState` のすべてのメンバーが `MainActor` によって isolate されます。
 
-さて、変更をメインスレッド上で行いたいクラスの代表格として、 `UIViewController` が挙げられます。 `UIViewController` に `@MainActor` が付与されていたら便利そうだと思いませんか？ `UIViewController` の API リファレンスを見てみると、なんと `UIViewController` に `@MainActor` が付与される変更が加えられています。
+さて、変更をメインスレッド上で行いたいクラスの代表格として、 `UIViewController` が思い浮かびます。 `UIViewController` に `@MainActor` が付与されていたら便利そうだと思いませんか？ [`UIViewController` の API リファレンス](https://developer.apple.com/documentation/uikit/uiviewcontroller)を見てみると、なんと `UIViewController` に `@MainActor` を付与する変更が加えられています。
 
 ```swift
 @MainActor class UIViewController : UIResponder
 ```
 
-これによって、（ `UIViweController` を継承した） `UserViewController` と `UserViewState` は同じ Actor の内部ということになります。 Case 15 で見たように、 Actor 内であればメソッドを同期的に利用することができました。そうすると、 `loadUser` メソッドの呼び出しは `await` 不要ということになります。
+これによって、（ `UIViweController` を継承した） `UserViewController` と `UserViewState` は同じ Actor の内部ということになります。 Case 15 で見たように、同一 Actor 内であればメソッドを同期的に呼び出すことができました。そのため、 `loadUser` メソッドの呼び出しは `await` 不要ということになります。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1759,6 +1763,8 @@ final class UserViewController: UIViewController {
     }
 }
 ```
+
+`await` が不要になったため、 `Task` のイニシャライザに渡す必要もなくなり、コードがすっきりしました。
 
 `state` への変更を View に反映する箇所も同様です。
 
@@ -1783,9 +1789,7 @@ final class UserViewController: UIViewController {
 }
 ```
 
-`await` が不要になったため、 `Task` のイニシャライザに渡す必要もなくなり、コードがすっきりしました。
-
-UIKit ではなく SwiftUI を使う場合も同様です。 `@StateObject` はメインスレッドで更新されなければならないため、上記の `UserViewState` のように、 `ObservableObject` に `@MainActor` を付与する必要があります。上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
+UIKit ではなく SwiftUI を使う場合も同様です。 `@StateObject` はメインスレッドで更新されなければならないため、 `@MainActor` を付与する必要があります。上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
 
 ```swift
 struct UserView: View {
