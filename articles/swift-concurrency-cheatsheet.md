@@ -1882,3 +1882,16 @@ struct UserView: View {
 - [SE-0316: Global actors](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md)
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+# Special Thanks
+
+- [@hironytic](https://twitter.com/hironytic)
+- [@kateinoigakukun](https://twitter.com/kateinoigakukun)
+- [@omochimetaru](https://twitter.com/omochimetaru)
+- [@stzn3](https://twitter.com/stzn3)
+- [@tarunon](https://twitter.com/tarunon)
+- その他 [swift-developers-japan](https://swift-developers-japan.github.io/) のみなさん
+
+（アルファベット順、敬称略）
+
+たくさんの議論や検証にお付き合いいただき、また筆者の知らない情報をたくさん教えていただき（特に[このあたり](https://discord.com/channels/291054398077927425/291054454793306112/890385969000349736)からの 2 日間ほど）ありがとうございました！！
