@@ -356,7 +356,7 @@ Before のコードが複雑になっている原因の一つは、それぞれ�
 - [SE-0296: Async/await](https://github.com/apple/swift-evolution/blob/main/proposals/0296-async-await.md)
 - [Meet async/await in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10132/)
 
-## 💼 Case 6 (`CheckedContinuation`, `withChecked(Throwing)Continuation`): コールバックから `async` への変換
+## 💼 Case 6 (`CheckedContinuation`): コールバックから `async` への変換
 
 :::message
 この Case には Before がありません。
@@ -653,7 +653,7 @@ for value in values {
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 10 (`(Throwing)TaskGroup`, `with(Throwing)TaskGroup`): 並行処理（可変個数の場合）
+## 💼 Case 10 (`TaskGroup`): 並行処理（可変個数の場合）
 
 次は可変個数の並行処理を考えます。 `async let` Binding を使えば固定個数の並行処理は簡単に記述できました。しかし、可変個数の場合は `async let` Binding が使えません。
 
@@ -861,7 +861,7 @@ Task がキャンセルされると Task Tree がトラバースされ、 Tree �
 - [SE-0304: Structured concurrency](https://github.com/apple/swift-evolution/blob/main/proposals/0304-structured-concurrency.md)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 12 (`Task.checkCancellation()`, `Task.isCancelled`): 非同期処理のキャンセル（非同期 API の実装側①）
+## 💼 Case 12 (`Task.checkCancellation()`): 非同期処理のキャンセル（非同期 API の実装側①）
 
 :::message
 この Case には Before がありません。
@@ -1496,7 +1496,7 @@ final class UserViewController: UIViewController {
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 - [Explore structured concurrency in Swift (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10134/)
 
-## 💼 Case 19 (`Sendable`, `@Sendable`, `@unchecked`): Actor Boundary を越える
+## 💼 Case 19 (`Sendable`): Actor Boundary を越える
 
 :::message
 この Case には Before がありません。
@@ -1705,7 +1705,7 @@ actor Foo {
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
 
-## 💼 Case 20 (`MainActor`, `@MainActor`): 共有された状態の変更（メインスレッド上での処理）
+## 💼 Case 20 (`MainActor`): 共有された状態の変更（メインスレッド上での処理）
 
 View に変更を加える場合、 iOS アプリ開発ではメインスレッド上で処理を実行する必要があります。そのため、 ViewModel の状態変更がすべてメインスレッドで行われると便利です。
 
