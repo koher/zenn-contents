@@ -1471,23 +1471,35 @@ final class UserViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         ...
-        state
-            .objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+        let task = Task { [weak self] in
+            guard let state = self?.state else { return }
+            for await _ in state.objectWillChange.values {
                 guard let self = self else { return }
                 // state を View に反映する処理
-                Task {
-                    self.nameLabel.text = await state.user?.name
-                }
+                self.nameLabel.text = await state.user?.name
             }
-            .store(in: &cancellables)
+        }
+        cancellables.insert(.init { task.cancel() })
     }
     ...
 }
 ```
 
-このようにして `actor` を使って ViewModel をデータ競合から守ることができました。しかし、これに関してはより良い方法を Case 20 で紹介します。
+`Publisher` の `values` プロパティを使えば、 `Publisher` を `AsyncSequence` に変換することができます。これによって、 `sink` メソッドの代わりに、 `for await` ループを使って `Publisher` を購読することができます。
+
+`for await` ループで `Publisher` を購読する場合の注意点は次の三つです。
+
+1. `self` を strong キャプチャしない（ `Task { [weak self] in ... }` のように weak キャプチャする）
+2. `guard let self = self else { return }` を `for await` ループの中に書く
+3. `cancellables` に `task` の `cancel` を追加する
+
+1 については、メモリリークを避けるためです。 `Publisher` は完了するとは限らないため、 `self` を strong キャプチャすると循環参照によって `self` が残り、メモリリークを起こすおそれがあります。
+
+2 についても同じで、ループの外に `guard let self = self else { return }` を書いてしまうと、結局そこで `self` を strong キャプチャすることになります。そうすると、 `self` はループが終わるまで strong キャプチャし続けられ、循環参照によるメモリリークの原因となります。
+
+3 については、キャンセルによる中断を実現するためです。 `cancellables` に `self` のキャンセルを追加しておくことで、 `self` が `deinit` されたときに `task` が `calcel` されます。それによって `objectWillChange.values` のイテレータに `nil` が流れ、 `for await` ループを脱出します。これがないと（ `strong` キャプチャされている） `state` が生き残り続けてしまいます。
+
+Case 18 では `actor` を使って ViewModel をデータ競合から守る方法を見てきました。 Case 20 ではより良い方法を紹介します。
 
 **参考文献**
 
@@ -1766,7 +1778,7 @@ final class UserViewController: UIViewController {
 
 `await` が不要になったため、 `Task` のイニシャライザに渡す必要もなくなり、コードがすっきりしました。
 
-`state` への変更を View に反映する箇所も同様です。
+一方で、 `state` への変更を View に反映する箇所は Case 18 とあまり変わりません。唯一の変更点は、 `state.user?.name` を取得する箇所で `await` が不要になったことです。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1775,21 +1787,79 @@ final class UserViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         ...
-        state
-            .objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+        let task = Task { [weak self] in
+            guard let state = self?.state else { return }
+            for await _ in state.objectWillChange.values {
                 guard let self = self else { return }
                 // state を View に反映する処理
                 self.nameLabel.text = state.user?.name
             }
-            .store(in: &cancellables)
+        }
+        cancellables.insert(.init { task.cancel() })
     }
     ...
 }
 ```
 
-UIKit ではなく SwiftUI を使う場合も同様です。 `@StateObject` はメインスレッドで更新されなければならないため、 `@MainActor` を付与する必要があります。上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
+`state.user?.name` の `await` をなくせても、結局 `for await` の `await` が必要なので、 `Task { }` をなくせるわけではありません。
+
+`state.user?.name` の `await` が不要なのは、 `Task { }` の中も `MainActor` として扱われているからです。これは、 `Task.init` に Actor Context を引き継ぐ性質があることによります。
+
+:::message
+Actor Context がクロージャに引き継がれるかどうかは、そのクロージャが `@Sendable` であるかによって決定されます。 `@Sendable` でない場合は引き継がれ、 `@Sendable` の場合は引き継がれません。
+
+`@Sendable` でない `@nonescaping` なクロージャはわかりやすいです。 `@nonescaping` なクロージャは、たとえば `Array` の `map` メソッドのように同期的に即時実行されるので、その中に Actor Context が引き継がれるのは自然です。
+
+`@Sendable` なクロージャに Actor Context が引き継がれないのは、たとえば Actor のメソッドに `(Int) -> Int` を渡して、 Actor に計算を実行してもらうようなケースを考えるとわかりやすいです。その計算はクロージャを宣言した Context ではなく、渡された Actor の Context で実行されてほしいはずです。
+
+ややこしいのは次の二つです。
+
+- `@Sendable` でない `@escaping` なクロージャ
+- `Task.init`
+
+まずは `@Sendable` でない `@escaping` なクロージャについて考えてみます。
+
+たとえば、 `MainActor` の Context で書かれた `DispatchQueue.global().async { }` の Trailing Closure は、 `MainActor` の Context を引き継ぐべきでしょうか。このクロージャ式は `DispatchQueue.global()` によってスレッドがスイッチされた上で実行されるため、メインスレッドでは実行されません。そのため、このクロージャが `MainActor` の Context で実行されるとコンパイラが判断すると、実際にはメインスレッドで実行されないためデータ競合の危険が生じます。
+
+しかし、将来的にはそのような API は取り除かれ、 `@Sendable` でない `@escaping` なクロージャでも危険はなくなると判断されているようです。過渡期の一時的な安全性のために、 `@Sendable` でない `@escaping` なクロージャから、 Actor Context の引き継ぎの能力を取り除くのは、言語設計上の誤りだという考えのようです。
+
+なお、その代わり過渡期においては Actor と `@Sendable` による安全性に穴が空いた状態になっており、 `DispatchQueue.global().async { }` 等を使うことで、コンパイラが検出できないデータ競合を引き起こすことができます。
+
+> The rule about `@escaping` closures being non-isolated was never great: it's always been an heuristic to try to deal with the world where `@Sendable` has yet to be fully adopted. So instead of making this heuristic part of the actors design, to be removed at some later point, we've removed it from the proposal. Instead, we'll need to rely on dynamic checking where actor code interacts with non-`@Sendable`-enforcing code.
+> （ https://forums.swift.org/t/se-0306-second-review-actors/47291/4 から引用）
+
+次に `Task.init` です。
+
+`Task.init` に渡すクロージャには `@Sendable` が付与されています。前述のルールに従えば Actor Context を引き継がないはずです。しかし、 `Task.init` に渡すクロージャは例外的に Actor Context を引き継ぎます。これは、 [`@_inheritActorContext` が付与](https://github.com/apple/swift/blob/eda5b4daad8eccfbf19f3833793fec934d9dd9ed/stdlib/public/Concurrency/Task.swift#L384)されることによって実現されています。
+
+たとえば、 Case 7 After のような例では、 `Task.init` が Actor Context を引き継ぐと便利です。
+
+```swift
+extension UserViewController {
+    override func viewDidAppear(_ animated: Bool) {
+        // MainActor
+        super.viewDidAppear(animated)
+
+        Task {
+            // ここも MainActor
+            do {
+                let user = try await fetchUser(for: userID)
+                // MainActor （メインスレッド）なので View を変更できる
+                nameLabel.text = user.name
+            } catch {
+                ...
+            }
+        }
+    }
+}
+```
+
+このようなケースのために、 `Task.init` は例外的に Actor Context を引き継ぐようになっています。
+:::
+
+UIKit ではなく、 SwiftUI を使う場合も `MainActor` は役立ちます。 `@StateObject` はメインスレッドで更新されなければならないため、 `@MainActor` を付与する必要があります。
+
+上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
 
 ```swift
 struct UserView: View {
@@ -1812,3 +1882,16 @@ struct UserView: View {
 - [SE-0316: Global actors](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md)
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+
+# Special Thanks
+
+- [@hironytic](https://twitter.com/hironytic)
+- [@kateinoigakukun](https://twitter.com/kateinoigakukun)
+- [@omochimetaru](https://twitter.com/omochimetaru)
+- [@stzn3](https://twitter.com/stzn3)
+- [@tarunon](https://twitter.com/tarunon)
+- その他 [swift-developers-japan](https://swift-developers-japan.github.io/) のみなさん
+
+（アルファベット順、敬称略）
+
+たくさんの議論や検証にお付き合いいただき、また筆者の知らない情報をたくさん教えていただき（特に[このあたり](https://discord.com/channels/291054398077927425/291054454793306112/890385969000349736)からの 2 日間ほど）ありがとうございました！！
