@@ -1864,22 +1864,10 @@ struct UserView: View {
 }
 ```
 
-iOS 15 以降では、 `task` modifier を使ってより完結に書くことができます。
+`onAppear` のクロージャで `loadUser` を呼び出す箇所は、 iOS 15 以降では、 `task` modifier を使ってより簡潔に書くことができます。
 
 ```swift
-struct UserView: View {
-    @StateObject private var state: UserViewState
-    ...
-    var body: some View {
-        VStack {
-            if let user = state.user {
-                Text(user.name)
-            }
-            ...
-        }
-        .task { await state.loadUser() }
-    }
-}
+.task { await state.loadUser() }
 ```
 
 `task` modifier を使う場合、 `View` が disappear するときには自動的に `Task` がキャンセルされます。
