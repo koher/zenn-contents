@@ -1763,22 +1763,7 @@ Case 18 では `actor` だったところを `final class` に変更し、 `@Mai
 @MainActor class UIViewController : UIResponder
 ```
 
-これによって、（ `UIViweController` を継承した） `UserViewController` と `UserViewState` は同じ Actor の内部ということになります。 Case 15 で見たように、同一 Actor 内であればメソッドを同期的に呼び出すことができました。そのため、 `loadUser` メソッドの呼び出しは `await` 不要ということになります。
-
-```swift
-final class UserViewController: UIViewController {
-    private let state: UserViewState
-    ...
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        state.loadUser()
-    }
-}
-```
-
-`await` が不要になったため、 `Task` のイニシャライザに渡す必要もなくなり、コードがすっきりしました。
-
-一方で、 `state` への変更を View に反映する箇所は Case 18 とあまり変わりません。唯一の変更点は、 `state.user?.name` を取得する箇所で `await` が不要になったことです。
+これによって、（ `UIViweController` を継承した） `UserViewController` と `UserViewState` は同じ Actor の内部ということになります。そのため、`state` への変更を View に反映する箇所で `state.user?.name` に同期的にアクセスできるようになり、 `await` が不要になります。
 
 ```swift
 final class UserViewController: UIViewController {
@@ -1801,9 +1786,9 @@ final class UserViewController: UIViewController {
 }
 ```
 
-`state.user?.name` の `await` をなくせても、結局 `for await` の `await` が必要なので、 `Task { }` をなくせるわけではありません。
+ただし、 `for await` の `await` が必要なので、 `Task { }` をなくせるわけではありません。
 
-`state.user?.name` の `await` が不要なのは、 `Task { }` の中も `MainActor` として扱われているからです。これは、 `Task.init` に Actor Context を引き継ぐ性質があることによります。
+`state.user?.name` の `await` が不要なのは、 `Task { }` のクロージャの中も `MainActor` として扱われているからです。これは、 `Task.init` に Actor Context を引き継ぐ性質があることによります。
 
 :::message
 Actor Context がクロージャに引き継がれるかどうかは、そのクロージャが `@Sendable` であるかによって決定されます。 `@Sendable` でない場合は引き継がれ、 `@Sendable` の場合は引き継がれません。
@@ -1857,6 +1842,8 @@ extension UserViewController {
 このようなケースのために、 `Task.init` は例外的に Actor Context を引き継ぐようになっています。
 :::
 
+なお、 `viewDidAppear` の中の `state.loadUser()` の呼び出しでは `await` が必要なことに注意して下さい。これは、 `loadUser` は `async` メソッドとして宣言されているからです。たとえ同じ Actor 内からの呼び出しであっても、 `async` で宣言されたメソッドを呼び出すときには必ず `await` が必要です。
+
 UIKit ではなく、 SwiftUI を使う場合も `MainActor` は役立ちます。 `@StateObject` はメインスレッドで更新されなければならないため、 `@MainActor` を付与する必要があります。
 
 上記の `UserViewState` クラスはそのような実装になっているので、そのまま `@StateObject` として利用可能です。
@@ -1872,16 +1859,37 @@ struct UserView: View {
             }
             ...
         }
-        .onAppear { state.loadUser() }
+        .onAppear { Task { await state.loadUser() } }
     }
 }
 ```
+
+iOS 15 以降では、 `task` modifier を使ってより完結に書くことができます。
+
+```swift
+struct UserView: View {
+    @StateObject private var state: UserViewState
+    ...
+    var body: some View {
+        VStack {
+            if let user = state.user {
+                Text(user.name)
+            }
+            ...
+        }
+        .task { await state.loadUser() }
+    }
+}
+```
+
+`task` modifier を使う場合、 `View` が disappear するときには自動的に `Task` がキャンセルされます。
 
 **参考文献**
 
 - [SE-0316: Global actors](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md)
 - [SE-0306: Actors](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Protect mutable state with Swift actors (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10133/)
+- [Discover concurrency in SwiftUI (WWDC 2021)](https://developer.apple.com/videos/play/wwdc2021/10019/)
 
 # Special Thanks
 
