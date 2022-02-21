@@ -628,7 +628,7 @@ Case 7 ですべての `async` 関数は Task の上で実行されると述べ�
 Child Task の中でさらに `async let` が用いられるなどした場合、上図のように孫 Task が作られることになります。この場合でも構造化は生きており、必ず Task Tree の末端（葉）から順に終了することが保証されます。
 
 :::message
-Structured Programming は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 goto を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによってコードが構造化され、そのような状況が改善されました。
+Structured Concurrency は構造化プログラミング（ Structured Programming ）から着想を得ています。構造化プログラミング以前は、 goto を使うなどして制御フローが複雑に絡み合ったコードを書くことが可能でした。構造化プログラミングによってコードが構造化され、そのような状況が改善されました。
 
 たとえば、次のコードでは `for` 文の中に `if` 文がありますが、この `if` 文の分岐が `for` 文のスコープを越えて生き残ることはできません。
 
@@ -644,7 +644,7 @@ for value in values {
 
 これと同じように、 Structured Concurrency は並行処理のコードに、スコープによる構造化をもたらします。
 
-なお、 Structured Programming は Swift の発明ではありません。比較的新しい概念ですが、 Kotlin などに先行して取り入れられています。
+なお、 Structured Concurrency は Swift の発明ではありません。比較的新しい概念ですが、 Kotlin などに先行して取り入れられています。
 :::
 
 **参考文献**
