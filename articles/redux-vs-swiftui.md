@@ -1,9 +1,9 @@
 ---
 title: "ReduxとSwiftUIの類似性をAIに示してもらった"
 emoji: "🤖"
-type: "tech" # tech: 技術記事 / idea: アイデア
+type: "idea" # tech: 技術記事 / idea: アイデア
 topics: ["redux", "swiftui", "react", "swift", "chatgpt"]
-published: false
+published: true
 ---
 
 **React×Redux**と**SwiftUI**によるアプリケーション開発は、共に**Single Source of Truth**を掲げ、**宣言的な仮想DOM/View**を用いるなど、類似点が多く見られます。両者はの対象はそれぞれWebフロントエンド・iOSアプリと異なりますが、両者の対応をコードで示すことができれば、より抽象的なレベルで概念を理解する助けになりそうです。
