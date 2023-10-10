@@ -239,7 +239,7 @@ final class UserViewState: ObservableObject {
 
 シングルトンでない場合、どのようにそのインスタンスを*ViewState*に渡すのかという問題があります。*View*から*View*へバケツリレーをしても良いですが、ボイラープレートが多くなり、また変更に弱くなります。
 
-SwiftUIでは、 `@Environment` を用いるのは一つの方法です。ただし、 `@Environment` の値には、それを保持する `View` の `init` からはアクセスできないので注意が必要です。 `@Environment` で受け取った値を*ViewState*に渡すには、一つ上のレイヤーで受け取って `init` の引数として渡すか、 `@Environment(Object)` を受け取るだけのレイヤーを挟む必要があります。
+SwiftUIでは、 `@Environment` を用いるのは一つの方法です。ただし、 `@Environment` の値には、それを保持する `View` の `init` からはアクセスできないので注意が必要です。 `@Environment` で受け取った値を*ViewState*に渡すには、一つ上のレイヤーで受け取って `init` の引数として渡すか、 `@Environment` を受け取るだけのレイヤーを挟む必要があります。
 
 ```swift
 // 一つ上のレイヤーで受け取る例
