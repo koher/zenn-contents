@@ -80,8 +80,8 @@ APIを叩く部分については `UserRepository` にカプセル化され、�
 final class UserViewState: ObservableObject {
     let id: User.ID
 
-    @Publsihed private(set) var user: User?
-    @Publsihed private(set) var isReloadButtonDisabled: Bool = false
+    @Published private(set) var user: User?
+    @Published private(set) var isReloadButtonDisabled: Bool = false
 
     init(id: User.ID) {
         self.id = id
@@ -145,7 +145,7 @@ struct UserView: View {
 
 ### *ViewState*の `@Published` プロパティを `private(set)` にする
 
-*ViewState*の `@Publsihed` プロパティを `private(set)` とすることで、*View*は直接それらのプロパティを変更することができなくなります。*View*が状態を変更するには*ViewState*のメソッドを呼び出すしかなく、それによって*View*にロジックが記述されることを防止します。
+*ViewState*の `@Published` プロパティを `private(set)` とすることで、*View*は直接それらのプロパティを変更することができなくなります。*View*が状態を変更するには*ViewState*のメソッドを呼び出すしかなく、それによって*View*にロジックが記述されることを防止します。
 
 ただし、 `Binding` を使ってコンポーネント（ `Toggle` や `TextField` など）に状態を渡したい場合は例外です。ただし、そのような場合でも*View*が直接プロパティを変更しないように注意し、 `$state.foo` のように `Binding` で渡すだけとします。
 
@@ -184,8 +184,8 @@ final class UserStore {
 final class UserViewState: ObservableObject {
     let id: User.ID
 
-    @Publsihed private(set) var user: User?
-    @Publsihed private(set) var isReloadButtonDisabled: Bool = false
+    @Published private(set) var user: User?
+    @Published private(set) var isReloadButtonDisabled: Bool = false
 
     init(id: User.ID) {
         self.id = id
