@@ -10,7 +10,11 @@ published: false
 
 *SVVS*は非常にシンプルなアーキテクチャで、特に*SwiftUI*を使ってアプリ開発をしていれば、自然と*SVVS*と似た形になることも多いでしょう。*SVVS*は特別難しいことをしませんが、多くのケースでは十分実用的です。
 
-*SVVS*については、先日、[iOSDC Japan 2023のトーク](https://fortee.jp/iosdc-japan-2023/proposal/edcec751-4f7f-46aa-9c17-92249a1a1771)で発表されました。本記事では、*SVVS*とは何か、その中身により踏み込んで解説します。
+先日、[iOSDC Japan 2023のトーク](https://fortee.jp/iosdc-japan-2023/proposal/edcec751-4f7f-46aa-9c17-92249a1a1771)で*SVVS*について発表がありました。本記事では、*SVVS*とは何か、その中身により踏み込んで解説します。
+
+:::message
+*SVVS*は、僕（@koher）が元々*SwiftUI*でやっていたことをベースに、ChatworkのiOSチームと話し合って作り上げたものです。*SVVS*という命名もChatworkのエンジニアの方によるものです。
+:::
 
 # なぜ*ViewState*や*Store*が必要なのか
 
@@ -18,15 +22,17 @@ published: false
 
 ## 1️⃣ すべてを*View*に記述する場合
 
-*SVVS*における*View*は、*SwiftUI*では `View` で実現されますが、すべての `View` が*SVVS*の*View*であるわけではありません。たとえば、再利用可能なコンポーネントなどは多くの場合*View*にあたりません。*View*は多くの場合、一つの画面を表す `View` で、自身の状態を持ちます。
+*SVVS*における*View*は、*SwiftUI*では `View` で実現されますが、すべての `View` が*SVVS*の*View*であるわけではありません。たとえば、再利用可能なコンポーネントなどは多くの場合＊SVVS*の*View*にあたりません。＊SVVS*の*View*は多くの場合、一つの画面を表す `View` で、自身の状態を持ちます。
 
 例として、SNSのようなアプリでユーザーの情報を表示するページ `UserView` について考えます。 `UserView` は自分自身だけではなく、任意のユーザーの情報を閲覧できるページです。たとえば、Zennでは[僕（@koher）というユーザーの情報を閲覧するページ](https://zenn.dev/koher)（↓）があります。 `UserView` はこのようなページを表すものとします。
 
 ![](/images/what-is-svvs/zenn-koher.png)
 
-`UserView` はIDを受け取り、APIを叩いてユーザー情報を取得し、それを表示します。*SwiftUI*で書くと次のようになります。今、コードを簡潔にするために、ユーザーの名前だけを表示することとします。
+`UserView` はIDを受け取り、APIを叩いてユーザー情報を取得・表示します。*SwiftUI*で書くと次のようになります（コードを簡潔にするために、ユーザーの名前だけを表示することとします）。
 
 ```swift
+import SwiftUI
+
 struct UserView: View {
     let id: User.ID
 
@@ -55,6 +61,9 @@ struct UserView: View {
         }
         // ユーザー情報を取得
         .task {
+            // ユーザー情報の取得中はボタンを無効化
+            isReloadButtonDisabled = true
+            defer { isReloadButtonDisabled = false }
             do {
                 self.user = try await UserRepository.fetchValue(for: id)
             } catch {
@@ -69,6 +78,10 @@ struct UserView: View {
 APIを叩く部分については `UserRepository` にカプセル化され、隠蔽されているものとします。
 :::
 
+:::message
+Reloadボタンが押されたときの処理について、 `Task { }` の外に `isReloadButtonDisabled = true` が書かれているのは、ボタンが押されたときに同期的にボタンを無効化するためです。これによって、ボタンが押されてから無効化されるまでの間に再度ボタンが押されてしまうことを防げます。
+:::
+
 このように、*View*にすべてを書こうとすると、*View*のロジック（初回ロードやReloadボタンを押したときのリロード、リロード中にReloadボタンを無効化する処理）とレイアウトのコードが混ざってしまい、コードの見通しが悪くなってしまいます。
 
 ## 2️⃣ *ViewState*に*View*の状態とロジックを分離する
@@ -76,6 +89,8 @@ APIを叩く部分については `UserRepository` にカプセル化され、�
 これを解決するために、*ViewState*に*View*の状態とロジックを分離します。
 
 ```swift
+import Combine
+
 @MainActor
 final class UserViewState: ObservableObject {
     let id: User.ID
@@ -87,8 +102,11 @@ final class UserViewState: ObservableObject {
         self.id = id
     }
 
+    // ユーザー情報を取得
     func load() async {
-        // ユーザー情報を取得
+        // ユーザー情報の取得中はボタンを無効化
+        isReloadButtonDisabled = true
+        defer { isReloadButtonDisabled = false }
         do {
             self.user = try await UserRepository.fetchValue(for: id)
         } catch {
@@ -96,13 +114,30 @@ final class UserViewState: ObservableObject {
         }
     }
 
+    // ユーザー情報を再取得
     func reload() {
         // ユーザー情報の取得中はボタンを無効化
         isReloadButtonDisabled = true
         Task {
             defer { isReloadButtonDisabled = false }
-            await load()
+            do {
+                self.user = try await UserRepository.fetchValue(for: id)
+            } catch {
+                // エラーハンドリング
+            }
         }
+    }
+}
+```
+
+さらに `load` と `reload` の重複部分を取り除くと次のようになります。
+
+```swift
+func reload() {
+    // ユーザー情報の取得中はボタンを無効化
+    isReloadButtonDisabled = true
+    Task {
+        await load()
     }
 }
 ```
@@ -110,6 +145,8 @@ final class UserViewState: ObservableObject {
 これを使えば、 `UserView` は次のように書けます。
 
 ```swift
+import SwiftUI
+
 struct UserView: View {
     @StateObject private var state: UserViewState
 
@@ -141,25 +178,29 @@ struct UserView: View {
 *ViewState*を実装する際には、次の点に注意してください。
 
 - *ViewState*の `@Published` プロパティを `private(set)` にする
-- *ViewState*のメソッドには `throws` は付与しない
+- *ViewState*のメソッドに `throws` を付与しない
 
 ### *ViewState*の `@Published` プロパティを `private(set)` にする
 
 *ViewState*の `@Published` プロパティを `private(set)` とすることで、*View*は直接それらのプロパティを変更することができなくなります。*View*が状態を変更するには*ViewState*のメソッドを呼び出すしかなく、それによって*View*にロジックが記述されることを防止します。
 
-ただし、 `Binding` を使ってコンポーネント（ `Toggle` や `TextField` など）に状態を渡したい場合は例外です。ただし、そのような場合でも*View*が直接プロパティを変更しないように注意し、 `$state.foo` のように `Binding` で渡すだけとします。
+ただし、値をセットする以上のロジックが存在しない場合は例外です。そのような場合は無駄に*setter*のメソッドを提供するのではなく、プロパティの `set` を公開した方が良いでしょう。特に、 `Binding` を使って他のコンポーネント（ `Toggle` や `TextField` など）に状態を渡したい場合は `set` を公開したいことも多いでしょう。そのような場合でも、 `set` に渡す値を計算するロジックを*View*に書いてしまわないように注意しましょう。
 
-### *ViewState*のメソッドには `throws` は付与しない
+### *ViewState*のメソッドに `throws` を付与しない
 
-*ViewState*のメソッドに `throws` を付与すると、それを呼び出す*View*側にエラーハンドリングのロジックが記述されてしまうことになります。それを防止するために、エラーハンドリングは*ViewState*内部で完結させ、その結果を*View*に反映する場合（エラーメッセージやアラートを表示するなど）は `@Published` プロパティの変更を通して行います。
+*ViewState*のメソッドに `throws` を付与すると、それを呼び出す*View*側にエラーハンドリングのロジックが記述されることになります。それを防止するために、エラーハンドリングは*ViewState*内部で完結させ、その結果を*View*に反映する場合（エラーメッセージやアラートを表示するなど）は `@Published` プロパティの変更を通して行います。
+
+たとえば、*ViewState*にエラーメッセージを表す `@Published` プロパティを追加、その値が `nil` でない場合に*View*がエラーメッセージを表示するなどが考えられます。
 
 ## 3️⃣ *View*のライフサイクルを超えて扱いたい状態を*Store*で管理する
 
-*ViewState*を導入することでコードはクリーンになりましたが、今のままでは `UserView` を開くたびにユーザー情報を読み込むことになります。一度読み込んだ情報はキャッシュし、再表示時には最新情報を取得して*View*に反映されるのが望ましい挙動です。
+*ViewState*を導入することでコードはクリーンになりましたが、今のままでは `UserView` を開くたびにユーザー情報を読み込むことになります。一度読み込んだ情報はキャッシュし、再表示時には即座にキャッシュの値が表示されるのが望ましいです（そして、キャッシュを表示している間に再取得を行います）。
 
 *ViewState*のライフサイクルは*View*と一致しているため、画面間で共有されるような状態を扱えません。そこで、*View*のライフサイクルを超えて状態を管理する*Store*を導入します。
 
 ```swift
+import Combine
+
 @MainActor
 final class UserStore {
     @Published private(set) var values: [User.ID: User] = [:]
@@ -167,6 +208,7 @@ final class UserStore {
     static let shared: UserStore = .init()
     private init() {}
 
+    // ユーザー情報を取得
     func loadValue(for id: User.ID) async throws {
         if let value = try await UserRepository.fetchValue(for: id) {
             values[value.id] = value
@@ -180,6 +222,8 @@ final class UserStore {
 そして、*ViewState*は自身の状態を*Store*に同期させる形にします。
 
 ```swift
+import Combine
+
 @MainActor
 final class UserViewState: ObservableObject {
     let id: User.ID
@@ -198,6 +242,8 @@ final class UserViewState: ObservableObject {
     }
 
     func load() async {
+        isReloadButtonDisabled = true
+        defer { isReloadButtonDisabled = false }
         do {
             // Storeのメソッドを呼び出してStoreの状態を更新する
             try await UserStore.shared.loadValue(for: id)
@@ -209,12 +255,15 @@ final class UserViewState: ObservableObject {
     func reload() {
         isReloadButtonDisabled = true
         Task {
-            defer { isReloadButtonDisabled = false }
             await load()
         }
     }
 }
 ```
+
+:::message
+*Combine*の代わりにiOS 17からの[*Observation*](https://developer.apple.com/documentation/observation)を利用する場合は、*Store*の状態を*ViewState*に反映するコードは不要となります。 `user` は*Computed Property*として実装しておけば、自動的に*Store*の状態変更が*View*に反映されるでしょう。
+:::
 
 このように、***Store*を導入することで、*View*のライフサイクルを超えて状態を保持し続けることができます。**
 
@@ -237,58 +286,13 @@ final class UserViewState: ObservableObject {
 
 この例では `UserStore` がアプリのライフサイクルで（アプリのプロセスが完了するまで）保持したい状態を扱うため、シングルトンとして実装しています。しかし、たとえばユーザーのログインからログアウトまでのライフサイクルで保持したい状態などもあります。そのような場合はシングルトンとせず、そのライフサイクルに応じて*Store*のインスタンスを生成・破棄する必要があります。
 
-シングルトンでない場合、どのようにそのインスタンスを*ViewState*に渡すのかという問題があります。*View*から*View*へバケツリレーをしても良いですが、ボイラープレートが多くなり、また変更に弱くなります。
-
-SwiftUIでは、 `@Environment` を用いるのは一つの方法です。ただし、 `@Environment` の値には、それを保持する `View` の `init` からはアクセスできないので注意が必要です。 `@Environment` で受け取った値を*ViewState*に渡すには、一つ上のレイヤーで受け取って `init` の引数として渡すか、 `@Environment` を受け取るだけのレイヤーを挟む必要があります。
-
-```swift
-// 一つ上のレイヤーで受け取る例
-struct UserListView: View {
-    @Environment(\.userStore) private var userStore: UserStore
-
-    ...
-
-    var body: some View {
-        List(...) { user in
-            NavigationLink {
-                UserView(id: user.id, userStore: userStore)
-            } label: {
-                ...
-            }
-        }
-    }
-}
-```
-
-```swift
-// @Environment(Object)を受け取るだけのレイヤーを挟む例
-struct UserView: View {
-    @Environment(\.userStore) private var userStore: UserStore
-
-    let id: User.ID
-
-    var body: some View {
-        _UserView(id: id, userStore: userStore)
-    }
-
-    private struct _UserView: View {
-        @StateObject private var state: UserViewState
-
-        init(id: User.ID, userStore: UserStore) {
-            self._state = .init(wrappedValue: .init(id: id, userStore: userStore))
-        }
-        ...
-    }
-}
-```
-
 ### *ViewState*側で値を反映するときは `removeDuplicates` する
 
 `UserStore` はそれまでにロードしたすべての `User` を保持します。 `UserView` が今表示したい `User` に限定されません。
 
-もし裏側で何らかの非同期処理（たとえば、定期的に `User` の最新の状態を受け取っているなど）が走っていると、今 `UserView` が表示しているのとは関係のない `User` が更新されることもあり得ます。
+もし裏側で何らかの非同期処理（たとえば、定期的に `User` の最新の状態を受け取っているなど）が走っていると、そのとき `UserView` が表示しているのとは関係のない `User` が更新されることもあり得ます。
 
-`UserViewState` は `UserStore.shared.$values` を通して変更を監視しているため、関係のない `User` が更新された場合も、その情報を受け取ってしまいます。そのような場合に、*View*の再レンダリングが行われないように、 `removeDuplicates` を挟むことでその*View*に関係のない更新を無視します。
+`UserViewState` は `UserStore.shared.$values` を通して変更を監視しているため、関係のない `User` が更新された場合もその情報を受け取ってしまいます。そのような場合に、*View*の `body` が無駄に実行されないように、 `removeDuplicates` を挟むことでその*View*に関係のない更新を無視します。
 
 ```swift
 UserStore.shared.$values
@@ -301,4 +305,4 @@ UserStore.shared.$values
 
 これまで見てきたように、*SVVS*では*View*の状態とロジックを*ViewState*に分離し、*View*のライフサイクルを超えて扱いたい状態を*Store*に分離して管理します。これは、*SwiftUI*を使っていれば自然と実現されることであり、呼び方は異なっても、*ViewState*や*Store*に相当するものを実装しているケースは多いでしょう。*SVVS*は特別なことはしていませんが、*View*と*ViewState*・*Store*の責務を意識してコードを書くことで、クリーンで見通しの良い実装を実現することができます。
 
-*SVVS*は難しいことをしませんが、多くのケースでは十分に機能します。逆に、*SVVS*程度の責務の分割もできていないようであれば（たとえば、*View*のロジックとレイアウトを混ぜて*View*に書いてしまっているなど）、*SVVS*を意識するだけでよりクリーンなコードを実現することができるでしょう。
+*SVVS*は難しいことをしませんが、多くのケースでは十分に機能します。逆に、*SVVS*程度の責務の分割もできていないようであれば、*SVVS*を意識するだけでよりクリーンなコードを実現することができるでしょう。
