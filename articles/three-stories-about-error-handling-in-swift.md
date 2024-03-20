@@ -3,7 +3,7 @@ title: "Swiftのエラーハンドリングについての三つの話"
 emoji: "🕊"
 type: "tech"
 topics: ["swift", "error"]
-published: false
+published: true
 ---
 
 :::message
