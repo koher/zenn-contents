@@ -7,15 +7,15 @@ published: true
 ---
 
 :::message
-これは、2016年に開催された最初の[try! Swift](https://tryswift.jp/)で、僕が英語発表したときの原稿を和訳したものです（読みやすいように微修正はしています）。
+これは、2016年に開催された最初の[try! Swift](https://tryswift.jp/)で、僕が英語発表したときの原稿を和訳したものです（読みやすいように微修正を加えています）。
 
 try! Swiftは、コロナ禍による長い中断を経て、（フル開催としては）5年ぶりに明日から開催されます。僕は、今回は時間的余裕がなさそうだったのでProposalの提出を見送ったのですが、僕にとっては初登壇となった思い入れのあるカンファレンスなので、何かしたいと思い当時の発表内容を和訳して投稿することにしました。
 
 ![](/images/three-stories-about-error-handling-in-swift/try-swift-tokyo-2016.jpg)
 
-この発表は英語で行われたことと、25分の発表時間にしては内容を詰め込みすぎたことなどから、がんばって準備したわりにあまり伝わらなかったんじゃないかと感じていました。8年前の発表なので今となっては古い話もありますが、2021年に採用されたのと同じ形の `async/await` （Swift独自の形なので当時存在していなかったもの）を2016年時点で提案していたりして、今読んでもおもしろいんじゃないかと思います。歴史的資料の観点でも、当時は `@discardableResult` がなく `@warn_unused_result` を使っていたなど、自分で読み返してみておもしろかったです。
+この発表は英語で行われたことと、25分の発表時間にしては内容を詰め込みすぎたことなどから、がんばって準備したわりにあまり伝わらなかったんじゃないかと感じていました。8年前の発表なので今となっては古い話もありますが、2021年に採用されたのと同じ形の `async/await` （Swift独自の形なので当時存在していなかったもの）を提案していたりして、今読んでもおもしろいんじゃないかと思います（ただし、僕の提案がSwiftの `async/await` につながったわけではありません）。歴史的な観点でも、当時は `@discardableResult` がなく `@warn_unused_result` を使っていたなど、自分で読み返してみておもしろかったです。
 
-また、この発表は、せっかく英語で話すんだしAppleの言語についてのカンファレンスだからと、ジョブズの有名なスピーチ[^8]のオマージュとして原稿を作りました。全体の流れや細かい表現までかなりジョブズのスピーチを意識しています。おそらく、細部はほとんど誰にも伝わらなかったので、その点についても補足します。
+また、この発表は、Appleの言語についてのカンファレンスだからと、ジョブズの有名なスピーチ[^8]のオマージュとして原稿を作りました。全体の流れや細かい表現までジョブズのスピーチを意識しています。おそらく、発表時は細部についてはほとんど誰にも伝わらなかったので、読み返してみて気付いた箇所は説明します。
 :::
 
 世界で最も優れたSwiftカンファレンスの一つであるtry! Swiftに参加できて光栄です。実を言うと、私はSwiftのカンファレンスに参加したことはなく、これが初めてのSwiftに関するプレゼンテーションです。今日は、エラーハンドリングに関する3つの話をしたいと思います。それだけです。大したことではありません。ただの3つの話です。
@@ -133,6 +133,10 @@ try {
 
 私は、同僚とこの問題について議論し、エラーを無視するための、明示的かつ簡単な方法が必要だという結論に達しました。
 
+:::message
+この同僚は、今回try! Swift Tokyo 2024で登壇する[omochimetaru](https://github.com/omochi)です。
+:::
+
 メソッド呼び出しの後に`!`をつけるのは良い候補でした。1つのキーを打つだけで済み、明示的で、危険そうに見えます。
 
 ```java
@@ -180,7 +184,7 @@ if let number = toInt(string) {
 
 エラーを無視するにはどうすればよいでしょうか。
 
-***Forced Unwrapping*** を知ったとき、私はとても驚きました。それは、まさに私たちが求めていたものだったからです。
+***Forced Unwrapping***を知ったとき、私はとても驚きました。それは、まさに私たちが求めていたもの（ `!` によるエラーの無視）だったからです。
 
 ```swift
 // [ Swift ]
@@ -204,12 +208,16 @@ foo.updateBar(bar) // 戻り値を使わないと警告
 ```
 
 :::message
-現在のSwift（5.10）では、普通に関数を宣言すると、戻り値を利用しない場合にコンパイラが警告を発します。しかし、当時のSwift 2では逆に、戻り値を利用しないと警告を発したい関数を宣言する場合に、明示的に `@warn_unused_result` を付与する必要がありました。[SE-0047](https://github.com/apple/swift-evolution/blob/main/proposals/0047-nonvoid-warn.md)によって `@discardableResult` が導入され、Swift 3から現在の挙動となりました。
+現在のSwift（5.10）では、普通に関数を宣言すると、戻り値を利用しない場合にコンパイラが警告を発します。しかし、当時のSwift 2では逆に、戻り値を利用しないと警告を発したい関数を宣言する場合に、明示的に `@warn_unused_result` を付与する必要がありました。Swift 3から `@discardableResult` が導入され、現在の挙動となりました。
 
-また、現在は空のタプルではなく `Void` と書くのが一般的ですが、当時は `()` もよく使われていました。
+- [SE-0047: Defaulting non-Void functions so they warn on unused results](https://github.com/apple/swift-evolution/blob/main/proposals/0047-nonvoid-warn.md)
 :::
 
-エラーのハンドリングと無視は、このように行うことができます。
+:::message
+戻り値がない場合に現在は `Void` と書くのが一般的ですが、当時は `()` もよく使われていました。
+:::
+
+エラーのハンドリングと無視は、次のように行うことができます。
 
 ```swift
 // [ Swift ]
@@ -223,12 +231,12 @@ if let _ = foo.updateBar(bar) {
 
 ```swift
 // [ Swift ]
-_ = foo.updateBar(bar) // エラーを無視する
+foo.updateBar(bar)! // エラーを無視する
 ```
 
 もし`@error_unused_result`のような属性があれば、（エラーハンドリングするか、明示的に無視するかを強制できて）さらに良くなるでしょう。
 
-そして、 `Optional` はエラーをハンドリングするためのより柔軟な方法を提供します。*例外*は `throw` された直後にハンドリングしなければなりませんが、 `Optional` は遅延してハンドリングすることができます。
+（ `Optional` によるエラーハンドリングを*検査例外*と比較すると） `Optional` はエラーをハンドリングするためのより柔軟な方法を提供します。*例外*は `throw` された直後にハンドリングしなければなりませんが、 `Optional` は遅延してハンドリングすることができます。
 
 `Optional` を変数に代入したり、関数に渡したり、プロパティに格納したりすることができます。
 
@@ -255,7 +263,11 @@ if let number = number {
 すべてがロマンチックだったわけではありません。私のコードはすぐに `Optional` だらけになりました。
 
 :::message
-これはジョブズのスピーチ中の"It wasn’t all romantic."を踏襲した表現です。
+これはジョブズのスピーチ中の
+
+> It wasn’t all romantic.
+
+を踏襲した表現です。
 :::
 
 `Optional` では、数値を2乗するのでさえ簡単ではありません。
@@ -324,7 +336,9 @@ let sum: Int? = a.flatMap { a in b.map { b in a + b } }
 `Optional` 値が増えると、複雑になります。典型的なケースは、JSONからモデルをデコードする場合です。
 
 :::message
-JSONのデコードの話が度々出てきますが、当時は `Codable` がなかったため、JSONのデコードがよく話題に上がりました。
+JSONのデコードの話が度々出てきますが、当時は `Codable` がなかったため、JSONのデコードがよく話題に上がりました。 `Codable` が導入されるのはSwift4.0です。
+
+- [SE-0166: Swift Archival & Serialization](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md)
 :::
 
 SwiftyJSON[^1]のようなAPIがあるとします。
@@ -445,7 +459,9 @@ let person: Person? = curry(Person.init)
 アプリカティブスタイルは、サードパーティのライブラリ**thoughtbot/Runes**[^2]を使うことで、Swiftでも利用可能です。
 
 :::message alert
-現在僕は、Swiftにおいてこのようなスタイルでのコーディングを推奨していません。SwiftでのOptionalの利用については、その後、次の記事にまとめたので参考にしてください。
+現在、僕は、Swiftにおいてこのようなスタイルでのコーディングを推奨していません。このケースでは*Optional Binding*が良いでしょう。
+
+また、 `Optional` の `map` や `flatMap` 等を利用すべきケースも限定的だと考えています。SwiftでのOptionalの利用については、その後、次の記事にまとめたので参考にしてください。
 
 - [SwiftのOptionalのベストプラクティス](https://qiita.com/koher/items/8b6156c8263b9b23c43c)
 :::
@@ -1599,20 +1615,24 @@ do {
 皆さん、どうもありがとうございました。
 
 :::message
-"Stay Typed. Stay Practical."は当然"Stay Hungry. Stay Foolish."のオマージュです。
+"Stay Typed. Stay Practical." は当然 "Stay Hungry. Stay Foolish." から来たものです。
 
-このまとめの最後の部分は、"Stay Typed. Stay Practical."を三度繰り返すことや、間の文の入れ方までジョブズのスピーチに合わせています。
+まとめの最後の部分は、 "Stay Typed. Stay Practical." を三度繰り返すことや、間の文の入れ方などジョブズのスピーチに合わせています。
 
 ジョブズのスピーチ
 
 > Beneath it were the words: “Stay Hungry. Stay Foolish.” It was their farewell message as they signed off. Stay Hungry. Stay Foolish. And I have always wished that for myself. And now, as you graduate to begin anew, I wish that for you.
+>
 > Stay Hungry. Stay Foolish.
+>
 > Thank you all very much.
 
 僕の発表
 
 > It can be said in other words: "Stay Typed. Stay Practical." I'm sure this will make the evolution as I talked through my presentation. Stay Typed. Stay Practical. And I have always wished that for Swift's designers. And now, as Swift became open source, I wish that for us.
+>
 > Stay Typed, Stay Practical.
+>
 > Thank you all very much.
 :::
 
