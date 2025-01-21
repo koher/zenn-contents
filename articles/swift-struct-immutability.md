@@ -3,7 +3,7 @@ title: "Swiftのstructのイミュータビリティ"
 emoji: "💎"
 type: "tech"
 topics: ["swift"]
-published: false
+published: true
 ---
 
 ```swift
