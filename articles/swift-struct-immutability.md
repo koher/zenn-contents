@@ -343,6 +343,44 @@ print(foo.value) // 1
 
 つまり、 **`struct` でもイミュータブルクラスでも、変数が表す状態を変更可能かどうかは、その変数が `var` / `let` のどちらで宣言されているかで決まる** ということになります。このことから、状態の可変性について、 **`struct` とイミュータブルクラスは本質的に同じ** ということができます。
 
+:::message
+**追記:** [@omochimetaru](https://zenn.dev/omochimetaru) に「参照型でもプロトコルエクステンションを経由するとmutatingできますよ」と教えてもらいました。
+
+↓のようにすれば、 `class Foo` に `mutating func increment()` を実装することができました。
+
+```swift
+protocol FooProtocol {
+    init(value: Int)
+    var value: Int { get }
+    mutating func increment()
+}
+
+// protocol extensionでmutating funcとしてincrementを実装
+extension FooProtocol {
+    mutating func increment()  {
+        self = .init(value: value + 1)
+    }
+}
+```
+```swift
+// FooをFooProtocolに準拠させることでincrementを利用可能にする
+final class Foo: FooProtocol {
+    let value: Int
+    init(value: Int) {
+        self.value = value
+    }
+}
+```
+```swift
+// イミュータブルクラスでもstructと同じようにインクリメントできる
+var foo: Foo = .init(value: 0)
+foo.increment()
+print(foo.value)  // 1
+```
+
+これを見ると、 `struct` とイミュータブルクラスが本質的に同じだということが、よりわかりやすいと思います。
+:::
+
 # ミュータブルクラスとの比較
 
 `struct` とイミュータブルクラスが似ていることを、ミュータブルクラスとの比較で見てみましょう。
