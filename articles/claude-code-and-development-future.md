@@ -2,7 +2,7 @@
 title: "Claude Codeで感じたAIとソフトウェア開発の未来"
 emoji: "🤖"
 type: "idea" # tech: 技術記事 / idea: アイデア
-topics: ["claude"]
+topics: ["claudecode", "ai", "claude", "anthropic"]
 published: true
 ---
 
