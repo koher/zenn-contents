@@ -3,7 +3,7 @@ title: "Claude Codeで感じたAIとソフトウェア開発の未来"
 emoji: "🤖"
 type: "idea" # tech: 技術記事 / idea: アイデア
 topics: ["claude"]
-published: false
+published: true
 ---
 
 先週、2月24日[^1]に[Claude Code](https://docs.anthropic.com/ja/docs/agents-and-tools/claude-code/overview)のresearch preview版が[リリース](https://x.com/AnthropicAI/status/1894092430560965029)されました。↓の動画では、Claude Codeによる次のような作業の様子が紹介されており、エキサイティングです。
